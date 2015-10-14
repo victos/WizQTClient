@@ -2,6 +2,8 @@
 #include "sync/token.h"
 #include "wizmainwindow.h"
 #include "coreplugin/icore.h"
+#include "utils/pathresolve.h"
+#include "widgets/wizLocalProgressWebView.h"
 
 #include <QWebView>
 #include <QMovie>
@@ -10,6 +12,7 @@
 #include <QPushButton>
 #include <QWebFrame>
 #include <QApplication>
+#include <QNetworkReply>
 
 using namespace WizService;
 
@@ -24,40 +27,38 @@ CWizWebSettingsDialog::CWizWebSettingsDialog(QString url, QSize sz, QWidget *par
     pal.setBrush(backgroundRole(), QBrush("#FFFFFF"));
     setPalette(pal);
 
-    m_web = new QWebView(this);
+    CWizLocalProgressWebView* localProgressWebView = new CWizLocalProgressWebView(this);
+
+    QVBoxLayout* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    layout->addWidget(localProgressWebView);
+    setLayout(layout);
+
+    m_web = localProgressWebView->web();
+//    connect(m_web->page()->networkAccessManager(), SIGNAL(finished(QNetworkReply*)),
+//            SLOT(on_networkRequest_finished(QNetworkReply*)));
     connect(m_web, SIGNAL(loadFinished(bool)), SLOT(on_web_loaded(bool)));
     connect(m_web->page()->mainFrame(), SIGNAL(javaScriptWindowObjectCleared()),
             SLOT(onEditorPopulateJavaScriptWindowObject()));
 
-    m_movie = new QMovie(this);
-    m_movie->setFileName(":/loading.gif");
+    m_movie = localProgressWebView->movie();
+    m_labelProgress = localProgressWebView->labelProgress();
 
-    m_labelProgress = new QLabel(this);
-    m_labelProgress->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_labelProgress->setAlignment(Qt::AlignCenter);
-    m_labelProgress->setMovie(m_movie);
+    //
+    m_labelProgress->setVisible(false);
+    m_web->setVisible(true);
+}
 
-    m_labelError = new QLabel(tr("wow, seems unable to load what you want..."), this);
-    m_labelError->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
-    m_labelError->setAlignment(Qt::AlignCenter);
-
-    QVBoxLayout* layout = new QVBoxLayout(this);
-    layout->setAlignment(Qt::AlignCenter);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(0);
-    setLayout(layout);
-
-    layout->addWidget(m_labelProgress);
-    layout->addWidget(m_labelError);
-    layout->addWidget(m_web);
+QWebView*CWizWebSettingsDialog::webVew()
+{
+    return m_web;
 }
 
 void CWizWebSettingsDialog::load()
 {
     m_web->setVisible(false);
-    m_labelError->setVisible(false);
     m_labelProgress->setVisible(true);
-
     m_movie->start();
     m_web->page()->mainFrame()->load(m_url);
 }
@@ -69,35 +70,57 @@ void CWizWebSettingsDialog::showEvent(QShowEvent* event)
     load();
 }
 
-
 void CWizWebSettingsDialog::on_web_loaded(bool ok)
 {
-    if (ok) {
+    if (ok)
+    {
         m_movie->stop();
         m_labelProgress->setVisible(false);
         m_web->setVisible(true);
-
     }
+    else
+    {
+        loadErrorPage();
+    }
+}
+
+void CWizWebSettingsDialog::loadErrorPage()
+{
+    QString strFileName = Utils::PathResolve::resourcesPath() + "files/errorpage/load_fail.html";
+    QString strHtml;
+    ::WizLoadUnicodeTextFromFile(strFileName, strHtml);    
+    QUrl url = QUrl::fromLocalFile(strFileName);
+    m_web->setHtml(strHtml, url);
 }
 
 void CWizWebSettingsDialog::onEditorPopulateJavaScriptWindowObject()
 {
     Core::Internal::MainWindow* mainWindow = qobject_cast<Core::Internal::MainWindow *>(Core::ICore::mainWindow());
-    m_web->page()->mainFrame()->addToJavaScriptWindowObject("WizExplorerApp", mainWindow->object());
+    if (mainWindow) {
+        m_web->page()->mainFrame()->addToJavaScriptWindowObject("WizExplorerApp", mainWindow->object());
+    }
+}
+
+void CWizWebSettingsDialog::on_networkRequest_finished(QNetworkReply* reply)
+{
+    // 即使在连接正常情况下也会出现OperationCanceledError，此处将其忽略
+    if (reply && reply->error() != QNetworkReply::NoError && reply->error() != QNetworkReply::OperationCanceledError)
+    {
+        showError();
+    }
 }
 
 void CWizWebSettingsDialog::showError()
 {
     m_movie->stop();
     m_labelProgress->setVisible(false);
-    m_labelError->setVisible(true);
+    m_web->setVisible(true);
+    loadErrorPage();
 }
-
 
 void CWizWebSettingsWithTokenDialog::load()
 {
     m_web->setVisible(false);
-    m_labelError->setVisible(false);
     m_labelProgress->setVisible(true);
 
     m_movie->start();
@@ -119,6 +142,8 @@ void CWizWebSettingsWithTokenDialog::on_token_acquired(const QString& token)
     url.replace(QString(WIZ_TOKEN_IN_URL_REPLACE_PART), token);
     //
     QUrl u = QUrl::fromEncoded(url.toUtf8());
+    qDebug() << " show web dialog with token : " << u;
+
     //
     m_web->page()->mainFrame()->load(u);
 }

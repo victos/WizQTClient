@@ -14,6 +14,7 @@ struct WIZSTYLEDATA;
 struct WIZDOCUMENTDATA;
 struct WIZDOCUMENTATTACHMENTDATA;
 struct WIZGROUPDATA;
+struct WIZMESSAGEDATA;
 class CWizDatabase;
 struct WIZDATABASEINFO;
 
@@ -24,7 +25,7 @@ class CWizDatabaseManager : public QObject
     Q_OBJECT
 
 public:
-    CWizDatabaseManager(const QString& strUserId);
+    CWizDatabaseManager(const QString& strAccountFolderName);
     ~CWizDatabaseManager();
 
     static CWizDatabaseManager* instance();
@@ -53,7 +54,7 @@ public:
 
 private:
     QMutex m_mutex;
-    QString m_strUserId;
+    QString m_strAccountFolderName;
     QPointer<CWizDatabase> m_dbPrivate;
     QMap<QString, CWizDatabase*> m_mapGroups;
 
@@ -70,6 +71,9 @@ Q_SIGNALS:
     void databasePermissionChanged(const QString& strKbGUID);
     void databaseBizchanged(const QString&);
 
+    //
+    void userIdChanged(const QString& oldId, const QString& newId);
+
     // CWizDatabase passthrough signals
     void tagCreated(const WIZTAGDATA& tag);
     void tagModified(const WIZTAGDATA& tagOld, const WIZTAGDATA& tagNew);
@@ -83,6 +87,8 @@ Q_SIGNALS:
     void documentDataModified(const WIZDOCUMENTDATA& document);
     void documentAbstractModified(const WIZDOCUMENTDATA& document);
     void documentTagModified(const WIZDOCUMENTDATA& document);
+    void documentReadCountChanged(const WIZDOCUMENTDATA& document);
+    void documentUploaded(const QString& strKbGUID, const QString& strGUID);
     void groupDocumentUnreadCountModified(const QString& strKbGUID);
     void attachmentCreated(const WIZDOCUMENTATTACHMENTDATA& attachment);
     void attachmentModified(const WIZDOCUMENTATTACHMENTDATA& attachmentOld, const WIZDOCUMENTATTACHMENTDATA& attachmentNew);
@@ -90,7 +96,14 @@ Q_SIGNALS:
     void folderCreated(const QString& strLocation);
     void folderDeleted(const QString& strLocation);
     void folderPositionChanged();
+    void tagsPositionChanged(const QString& strKbGUID);
 
+    void messageCreated(const WIZMESSAGEDATA& msg);
+    void messageModified(const WIZMESSAGEDATA& msgOld,
+                         const WIZMESSAGEDATA& msgNew);
+    void messageDeleted(const WIZMESSAGEDATA& msg);
+
+    void favoritesChanged(const QString& favorites);
 };
 
 #endif // WIZDATABASEMANAGER_H

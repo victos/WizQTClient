@@ -2,11 +2,12 @@
 #define WIZKMXMLRPC_H
 
 #include "wizXmlRpcServer.h"
+#include "wizJSONServerBase.h"
 
 #define WIZKM_XMLRPC_ERROR_TRAFFIC_LIMIT		304
 #define WIZKM_XMLRPC_ERROR_STORAGE_LIMIT		305
+#define WIZKM_XMLRPC_ERROR_NOTE_COUNT_LIMIT		3032
 #define WIZKM_XMLRPC_ERROR_BIZ_SERVICE_EXPR		380
-#define WIZKM_XMLRPC_ERROR_BIZ_NOTE_COUNT_LIMIT		3032
 
 class CWizKMXmlRpcServerBase : public CWizXmlRpcServerBase
 {
@@ -18,7 +19,7 @@ public:
 };
 
 
-class CWizKMAccountsServer : public CWizKMXmlRpcServerBase
+class CWizKMAccountsServer : public CWizKMXmlRpcServerBase, public CWizJSONServerBase
 {
 public:
     CWizKMAccountsServer(const QString& strUrl, QObject* parent = 0);
@@ -44,13 +45,13 @@ public:
     bool CreateAccount(const QString& strUserName, const QString& strPassword, const QString& InviteCode, const QString& strCaptchaID, const QString& strCaptcha);
     void SetAutoLogout(bool b) { m_bAutoLogout = b; }
     bool ShareSNS(const QString& strToken, const QString& strSNS, const QString& strComment, const QString& strURL, const QString& strDocumentGUID);
-    bool ShareGroup(const QString& strToken, const QString& strDocumentGUIDs, const QString& strGroups);
     bool GetGroupList(CWizGroupDataArray& arrayGroup);
     bool GetBizList(CWizBizDataArray& arrayBiz);
     bool CreateTempGroup(const QString& strEmails, const QString& strAccessControl, const QString& strSubject, const QString& strEmailText, WIZGROUPDATA& group);
     bool KeepAlive(const QString& strToken);
     bool GetMessages(__int64 nVersion, CWizUserMessageDataArray& arrayMessage);
     bool SetMessageReadStatus(const QString& strMessageIDs, int nStatus);
+    bool SetMessageDeleteStatus(const QString &strMessageIDs, int nStatus);
 
     bool GetValueVersion(const QString& strKey, __int64& nVersion);
     bool GetValue(const QString& strKey, QString& strValue, __int64& nVersion);
@@ -79,7 +80,6 @@ private:
     bool accounts_getCert(const QString& strUserName, const QString& strPassword, QString& strN, QString& stre, QString& strd, QString& strHint);
     bool accounts_setCert(const QString& strUserName, const QString& strPassword, const QString& strN, const QString& stre, const QString& strd, const QString& strHint);
     bool document_shareSNS(const QString& strToken, const QString& strSNS, const QString& strComment, const QString& strURL, const QString& strDocumentGUID);
-    bool document_shareGroup(const QString& strToken, const QString& strDocumentGUIDs, const QString& strGroups);
 
     bool accounts_getGroupList(CWizGroupDataArray& arrayGroup);
     bool accounts_getBizList(CWizBizDataArray& arrayBiz);
@@ -169,11 +169,10 @@ public:
     BOOL attachment_getData(const QString& strAttachmentGUID, UINT nParts, WIZDOCUMENTATTACHMENTDATAEX& ret);
     BOOL attachment_postData(WIZDOCUMENTATTACHMENTDATAEX& data, UINT nParts, __int64& nServerVersion);
 
-    BOOL document_downloadList(const CWizStdStringArray& arrayDocumentGUID, std::deque<WIZDOCUMENTDATAEX>& arrayRet);
-    BOOL attachment_downloadList(const CWizStdStringArray& arrayAttachmentGUID, std::deque<WIZDOCUMENTATTACHMENTDATAEX>& arrayRet);
+    BOOL document_downloadSimpleList(const CWizStdStringArray& arrayDocumentGUID, std::deque<WIZDOCUMENTDATAEX>& arrayRet);
+    BOOL attachment_downloadSimpleList(const CWizStdStringArray& arrayAttachmentGUID, std::deque<WIZDOCUMENTATTACHMENTDATAEX>& arrayRet);
 
     BOOL document_downloadFullList(const CWizStdStringArray& arrayDocumentGUID, std::deque<WIZDOCUMENTDATAEX>& arrayRet);
-    BOOL document_downloadFullListEx(const CWizStdStringArray& arrayDocumentGUID, std::deque<WIZDOCUMENTDATAEX>& arrayRet);
 
     BOOL document_getList(int nCountPerPage, __int64 nVersion, std::deque<WIZDOCUMENTDATAEX>& arrayRet);
     BOOL attachment_getList(int nCountPerPage, __int64 nVersion, std::deque<WIZDOCUMENTATTACHMENTDATAEX>& arrayRet);
@@ -217,7 +216,7 @@ protected:
     //
     //
     template <class TData, class TWrapData>
-    BOOL downloadList(const QString& strMethodName, const QString& strGUIDArrayValueName, const CWizStdStringArray& arrayGUID, std::deque<TData>& arrayRet)
+    BOOL downloadListCore(const QString& strMethodName, const QString& strGUIDArrayValueName, const CWizStdStringArray& arrayGUID, std::deque<TData>& arrayRet)
     {
         if (arrayGUID.empty())
             return TRUE;
@@ -233,6 +232,41 @@ protected:
         }
         //
         arrayRet.assign(arrayWrap.begin(), arrayWrap.end());
+        //
+        return TRUE;
+    }
+
+
+    template <class TData, class TWrapData>
+    BOOL downloadList(const QString& strMethodName, const QString& strGUIDArrayValueName, const CWizStdStringArray& arrayGUID, std::deque<TData>& arrayRet)
+    {
+        int nCountPerPage = 30;
+        //
+        CWizStdStringArray::const_iterator it = arrayGUID.begin();
+        //
+        while (1)
+        {
+            CWizStdStringArray subArray;
+            //
+            for (;
+                 it != arrayGUID.end(); )
+            {
+                subArray.push_back(*it);
+                it++;
+                //
+                if (subArray.size() == nCountPerPage)
+                    break;
+            }
+            //
+            std::deque<TData> subRet;
+            if (!downloadListCore<TData, TWrapData>(strMethodName, strGUIDArrayValueName, subArray, subRet))
+                return FALSE;
+            //
+            arrayRet.insert(arrayRet.end(), subRet.begin(), subRet.end());
+            //
+            if (it == arrayGUID.end())
+                break;
+        }
         //
         return TRUE;
     }
@@ -386,19 +420,19 @@ public:
     ////下载列表//////////////
     //
     template <class TData>
-    BOOL downloadList(const CWizStdStringArray& arrayGUID, std::deque<TData>& arrayData)
+    BOOL downloadSimpleList(const CWizStdStringArray& arrayGUID, std::deque<TData>& arrayData)
     {
         return TRUE;
     }
     template <class TData>
-    BOOL downloadList(const CWizStdStringArray& arrayGUID, std::deque<WIZDOCUMENTDATAEX>& arrayData)
+    BOOL downloadSimpleList(const CWizStdStringArray& arrayGUID, std::deque<WIZDOCUMENTDATAEX>& arrayData)
     {
-        return document_downloadList(arrayGUID, arrayData);
+        return document_downloadSimpleList(arrayGUID, arrayData);
     }
     template <class TData>
-    BOOL downloadList(const CWizStdStringArray& arrayGUID, std::deque<WIZDOCUMENTATTACHMENTDATAEX>& arrayData)
+    BOOL downloadSimpleList(const CWizStdStringArray& arrayGUID, std::deque<WIZDOCUMENTATTACHMENTDATAEX>& arrayData)
     {
-        return attachment_downloadList(arrayGUID, arrayData);
+        return attachment_downloadSimpleList(arrayGUID, arrayData);
     }
     //
     template <class TData>
@@ -487,7 +521,7 @@ public:
         arrayDocument.push_back(strDocumentGUID);
         //
         CWizDocumentDataArray arrayData;
-        if (!downloadList<WIZDOCUMENTDATAEX>(arrayDocument, arrayData))
+        if (!downloadSimpleList<WIZDOCUMENTDATAEX>(arrayDocument, arrayData))
         {
             TOLOG(_T("Can't download document info list from server!"));
             return FALSE;

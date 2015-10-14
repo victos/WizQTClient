@@ -28,11 +28,13 @@ public:
     /* Message related operations */
     bool createMessage(const WIZMESSAGEDATA& data);
     bool getAllMessages(CWizMessageDataArray& arrayMsg);
+    bool getAllMessageSenders(CWizStdStringArray& arraySender);
     bool getLastestMessages(CWizMessageDataArray& arrayMsg, int nMax = 200);
-    bool setMessageReadStatus(const WIZMESSAGEDATA& msg, qint32 nRead);
-    bool setMessageReadStatus(const CWizMessageDataArray& arrayMsg, qint32 nRead);
+    bool setMessageReadStatus(const WIZMESSAGEDATA& msg);
+    bool setMessageDeleteStatus(const WIZMESSAGEDATA& msg);
     bool getModifiedMessages(CWizMessageDataArray&  arrayMsg);
     bool getUnreadMessages(CWizMessageDataArray& arrayMsg);
+    bool modifyMessageLocalChanged(const WIZMESSAGEDATA& msg);
     int getUnreadMessageCount();
 
     /* Tags related operations */
@@ -40,6 +42,7 @@ public:
                    const CString& strDescription, WIZTAGDATA& data);
     bool ModifyTag(WIZTAGDATA& data);
     bool DeleteTag(const WIZTAGDATA& data, bool bLog, bool bReset = true);
+    bool ModifyTagPosition(const WIZTAGDATA& data);
 
 
     bool SetDocumentTags(WIZDOCUMENTDATA& data, const CWizTagDataArray& arrayTag);
@@ -62,12 +65,13 @@ public:
     bool DeleteTagDocuments(const WIZTAGDATA& data, bool bReset);
 
     // Query tags by name
-    bool TagByName(const CString& strName, WIZTAGDATA& data, const CString& strExceptGUID = "");
+    bool TagByName(const CString& strName, CWizTagDataArray& arrayTag, const CString& strExceptGUID = "");
     bool TagByNameEx(const CString& strName, WIZTAGDATA& data);
     bool TagArrayByName(const CString& strName, CWizTagDataArray& arrayTag);
 
     // Query tags by document guid
     bool GetDocumentTagsNameStringArray(const CString& strDocumentGUID, CWizStdStringArray& arrayTagName);
+    int GetDocumentTagCount(const CString& strDocumentGUID);
     bool GetDocumentTags(const CString& strDocumentGUID, CWizTagDataArray& arrayTag);
     bool GetDocumentTags(const CString& strDocumentGUID, CWizStdStringArray& arrayTagGUID);
     CString GetDocumentTagsText(const CString& strDocumentGUID);
@@ -176,6 +180,8 @@ public:
     void AddExtraFolder(const QString& strLocation);
     void DeleteExtraFolder(const QString& strLocation);
 
+    bool UpdateLocation(const QString& strOldLocation, const QString& strNewLocation);
+
     bool IsLocationEmpty(const CString& strLocation);
     bool GetAllLocations(CWizStdStringArray& arrayLocation);
     bool GetAllChildLocations(const CString& strLocation, CWizStdStringArray& arrayLocation);
@@ -283,6 +289,8 @@ public:
     bool GetRecentDocumentsCreated(const CString& strDocumentType, int nCount, CWizDocumentDataArray& arrayDocument);
     bool GetRecentDocumentsModified(const CString& strDocumentType, int nCount, CWizDocumentDataArray& arrayDocument);
     bool GetRecentDocumentsByCreatedTime(const COleDateTime& t, CWizDocumentDataArray& arrayDocument);
+    bool GetRecentDocumentsByModifiedTime(const COleDateTime& t, CWizDocumentDataArray& arrayDocument);
+    bool GetRecentDocumentsByAccessedTime(const COleDateTime& t, CWizDocumentDataArray& arrayDocument);
 
     // Extend
     bool GetModifiedDocuments(CWizDocumentDataArray& arrayData);
@@ -296,14 +304,15 @@ public:
 
     /* Attachment related operations */
     void UpdateDocumentAttachmentCount(const CString& strDocumentGUID,
-                                       bool bReset = true);
+                                       bool bResetDocInfo = true);
 
     bool CreateAttachment(const CString& strDocumentGUID, const CString& strName,
                           const CString& strURL, const CString& strDescription,
                           const CString& strDataMD5, WIZDOCUMENTATTACHMENTDATA& data);
 
     bool ModifyAttachmentInfo(WIZDOCUMENTATTACHMENTDATA& data);
-    virtual bool DeleteAttachment(const WIZDOCUMENTATTACHMENTDATA& data, bool bLog, bool bReset);
+    virtual bool DeleteAttachment(const WIZDOCUMENTATTACHMENTDATA& data, bool bLog,
+                                  bool bResetDocInfo, bool updateAttachList = true);
 
     // Raw Query
     int GetDocumentAttachmentCount(const CString& strDocumentGUID);
@@ -331,6 +340,9 @@ public:
     bool TitleExists(const CString& strLocation, CString strTitle);
     bool GetNextTitle(const QString& strLocation, QString& strTitle);
 
+    virtual QString getTableStructureVersion();
+    virtual bool setTableStructureVersion(const QString& strVersion);
+
     /* Metas related operations */
     bool GetMetasByName(const QString& lpszMetaName,
                         CWizMetaDataArray& arrayMeta);
@@ -342,12 +354,14 @@ public:
     qint64 GetMetaInt64(const CString& strMetaName, const CString& strKey, qint64 nDef);
     bool SetMetaInt64(const CString& strMetaName, const CString& strKey, qint64 n);
     bool deleteMetasByName(const QString& strMetaName);
+    bool deleteMetaByKey(const QString& strMetaName, const QString& strMetaKey);
 
     /* Deleted related operations */
     bool GetDeletedGUIDs(CWizDeletedGUIDDataArray& arrayGUID);
     bool GetDeletedGUIDs(WizObjectType eType, CWizDeletedGUIDDataArray& arrayGUID);
 
     bool DeleteDeletedGUID(const CString& strGUID);
+    bool IsObjectDeleted(const CString& strGUID);
     bool GetDeletedGUIDsByTime(const COleDateTime& t, CWizDeletedGUIDDataArray& arrayData);
 
     CString GetDeletedItemsLocation() const { return m_strDeletedItemsLocation; }
@@ -358,10 +372,10 @@ public:
 	static CString GetLocationArraySQLWhere(const CWizStdStringArray& arrayLocation);
 
     bool ObjectExists(const QString &strGUID, const QString &strType, bool& bExists);
-    bool DeleteObject(const QString &strGUID, const QString &strType, bool bLog);
     bool GetObjectTableInfo(const CString& strType, CString& strTableName, CString& strKeyFieldName);
 
     qint64 GetObjectLocalVersion(const QString &strGUID, const QString &strType);
+    qint64 GetObjectLocalVersionEx(const QString &strGUID, const QString &strType, bool& bObjectExists);
     bool ModifyObjectVersion(const CString& strGUID, const CString& strType, qint64 nVersion);
 
     bool IsObjectDataModified(const CString& strGUID, const CString& strType);
@@ -399,6 +413,10 @@ public:
     bool setAllDocumentsSearchIndexed(bool b);
     bool getAllDocumentsNeedToBeSearchIndexed(CWizDocumentDataArray& arrayDocument);
     bool setDocumentSearchIndexed(const QString& strDocumentGUID, bool b);
+
+    bool SearchDocumentByWhere(const QString& strWhere,
+                               int nMaxCount,
+                               CWizDocumentDataArray& arrayDocument);
 
     bool SearchDocumentByTitle(const QString& strTitle,
                                const QString& strLocation,

@@ -29,7 +29,6 @@ CWizDocumentListViewItem::CWizDocumentListViewItem(CWizExplorerApp& app,
     , m_documentUnread(false)
     , m_specialFocused(false)
 {
-    Q_ASSERT(!data.doc.strKbGUID.isEmpty());
     Q_ASSERT(!data.doc.strGUID.isEmpty());
 
     m_data.nType = data.nType;
@@ -148,15 +147,13 @@ void CWizDocumentListViewItem::reload(CWizDatabase& db)
 void CWizDocumentListViewItem::setSortingType(int type)
 {
     m_nSortingType = type;
-
     CWizDatabase& db = m_app.databaseManager().db(m_data.doc.strKbGUID);
-    db.DocumentFromGUID(m_data.doc.strGUID, m_data.doc);
-    QString strFileName = db.GetDocumentFileName(m_data.doc.strGUID);
-    QString strAuthor = db.GetDocumentOwnerAlias(m_data.doc);
-    strAuthor += strAuthor.isEmpty() ? "" : " ";
-    QFileInfo fi(strFileName);
+
 
     if (m_data.nType == TypeGroupDocument) {
+        QString strAuthor = db.GetDocumentOwnerAlias(m_data.doc);
+        strAuthor += strAuthor.isEmpty() ? "" : " ";
+
         switch (m_nSortingType) {
         case CWizSortingPopupButton::SortingCreateTime:
         case -CWizSortingPopupButton::SortingCreateTime:
@@ -184,6 +181,9 @@ void CWizDocumentListViewItem::setSortingType(int type)
             break;
         case CWizSortingPopupButton::SortingSize:
         case -CWizSortingPopupButton::SortingSize:
+        {
+            QString strFileName = db.GetDocumentFileName(m_data.doc.strGUID);
+            QFileInfo fi(strFileName);
             if (!fi.exists()) {
                 m_data.strInfo = strAuthor + QObject::tr("Unknown");
             } else {
@@ -191,6 +191,7 @@ void CWizDocumentListViewItem::setSortingType(int type)
                 m_data.strInfo = strAuthor + ::WizGetFileSizeHumanReadalbe(strFileName);
             }
             break;
+        }
         default:
             Q_ASSERT(0);
             break;
@@ -223,6 +224,9 @@ void CWizDocumentListViewItem::setSortingType(int type)
             break;
         case CWizSortingPopupButton::SortingSize:
         case -CWizSortingPopupButton::SortingSize:
+        {
+            QString strFileName = db.GetDocumentFileName(m_data.doc.strGUID);
+            QFileInfo fi(strFileName);
             if (!fi.exists()) {
                 m_data.strInfo = QObject::tr("Unknown") + " " + tags();
             } else {
@@ -230,6 +234,7 @@ void CWizDocumentListViewItem::setSortingType(int type)
                 m_data.strInfo = ::WizGetFileSizeHumanReadalbe(strFileName) + " "  + tags();
             }
             break;
+        }
         default:
             Q_ASSERT(0);
             break;
@@ -486,24 +491,40 @@ void CWizDocumentListViewItem::drawSyncStatus(QPainter* p, const QStyleOptionVie
 
     QString strIconPath;
     CWizDatabase& db = m_app.databaseManager().db(m_data.doc.strKbGUID);
-    if (db.IsDocumentModified(m_data.doc.strGUID))
+    bool isRetina = WizIsHighPixel();
+    strIconPath = ::WizGetSkinResourcePath(m_app.userSettings().skin());
+    CWizDocumentAttachmentDataArray arrayAttachment;
+    db.GetDocumentAttachments(m_data.doc.strGUID, arrayAttachment);
+    bool attachModified = false;
+    for (WIZDOCUMENTATTACHMENTDATAEX attachment : arrayAttachment)
     {
-        strIconPath = ::WizGetSkinResourcePath(m_app.userSettings().skin()) + "uploading.bmp";
+        if (db.IsAttachmentModified(attachment.strGUID))
+            attachModified = true;        
+    }
+    if (db.IsDocumentModified(m_data.doc.strGUID) || attachModified)
+    {
+        strIconPath += isRetina ? "uploading@2x.png" : "uploading.png";
     }
     else if (!db.IsDocumentDownloaded(m_data.doc.strGUID))
     {
-        strIconPath = ::WizGetSkinResourcePath(m_app.userSettings().skin()) + "downloading.bmp";
+        strIconPath += isRetina ? "downloading@2x.png" : "downloading.png";
     }
     else
         return;
 
     p->save();
     int nMargin = -1;
-    QPixmap fullPic(strIconPath);
-    QPixmap pix = fullPic.copy(0, 0, fullPic.height(), fullPic.height());
-    pix.setMask(pix.createMaskFromColor(Qt::black, Qt::MaskInColor));
-    QRect rcSync(vopt->rect.right() - pix.width() - nMargin, vopt->rect.bottom() - pix.height() - nMargin,
-                 pix.width(), pix.height());
+    QPixmap pix(strIconPath);
+    QSize szPix = pix.size();
+    WizScaleIconSizeForRetina(szPix);
+    QRect rcSync(vopt->rect.right() - szPix.width() - nMargin, vopt->rect.bottom() - szPix.height() - nMargin,
+                 szPix.width(), szPix.height());
+    if (vopt->state & QStyle::State_Selected)
+    {
+        QRect rcClip(vopt->rect.right() - szPix.width() - nMargin, vopt->rect.bottom() - szPix.height(),
+                     szPix.width(), szPix.height());
+        p->setClipRect(rcClip);
+    }
     p->drawPixmap(rcSync, pix);
     p->restore();
 

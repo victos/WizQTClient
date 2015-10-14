@@ -3,21 +3,24 @@
 #include <QLabel>
 #include <QHBoxLayout>
 
+#include "utils/stylehelper.h"
 #include "share/wizobject.h"
 #include "share/wizDatabaseManager.h"
 #include "share/wizDatabase.h"
 #include "share/wizmisc.h"
+#include "wizdef.h"
 
 using namespace Core::Internal;
 
-InfoBar::InfoBar(QWidget *parent)
+InfoBar::InfoBar(CWizExplorerApp& app, QWidget *parent)
     : QWidget(parent)
+    , m_app(app)
 {
     setStyleSheet("font-size: 11px; color: #646464;");
     setContentsMargins(5, 0, 0, 0);
 
-    // FIXME: should be the same as editor toolbar
-    setFixedHeight(32);
+    int nHeight = Utils::StyleHelper::infoBarHeight();
+    setFixedHeight(nHeight);
 
     QHBoxLayout* layout = new QHBoxLayout();
     layout->setContentsMargins(0, 0, 0, 0);
@@ -26,12 +29,12 @@ InfoBar::InfoBar(QWidget *parent)
 
     m_labelCreatedTime = new QLabel(this);
     m_labelModifiedTime = new QLabel(this);
-    m_labelAuthor = new QLabel(this);
+    m_labelOwner = new QLabel(this);
     m_labelSize = new QLabel(this);
 
     layout->addWidget(m_labelCreatedTime);
     layout->addWidget(m_labelModifiedTime);
-    layout->addWidget(m_labelAuthor);
+    layout->addWidget(m_labelOwner);
     layout->addWidget(m_labelSize);
     layout->addStretch();
 }
@@ -44,11 +47,22 @@ void InfoBar::setDocument(const WIZDOCUMENTDATA& data)
     QString strModifiedTime = QObject::tr("Update time: ") + data.tModified.toString("yyyy-MM-dd");
     m_labelModifiedTime->setText(strModifiedTime);
 
-    QString strAuthor = QObject::tr("Author: ") + data.strOwner;
-    strAuthor = fontMetrics().elidedText(strAuthor, Qt::ElideRight, 150);
-    m_labelAuthor->setText(strAuthor);
 
-    QString strFile = CWizDatabaseManager::instance()->db(data.strKbGUID).GetDocumentFileName(data.strGUID);
+    CWizDatabase& db = m_app.databaseManager().db(data.strKbGUID);
+    if (db.IsGroup())
+    {
+        QString strOwner = db.GetDocumentOwnerAlias(data);
+        strOwner = QObject::tr("Owner: ") + (strOwner.isEmpty() ? data.strOwner : strOwner);
+        strOwner = fontMetrics().elidedText(strOwner, Qt::ElideRight, 150);
+        m_labelOwner->setVisible(true);
+        m_labelOwner->setText(strOwner);
+    }
+    else
+    {
+        m_labelOwner->setVisible(false);
+    }
+
+    QString strFile = db.GetDocumentFileName(data.strGUID);
     QString strSize = QObject::tr("Size: ") + ::WizGetFileSizeHumanReadalbe(strFile);
     m_labelSize->setText(strSize);
 }

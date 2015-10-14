@@ -10,11 +10,10 @@
 // Wrap widget for qt widget and mac native search field
 // refer to mac/wizSearchWidget.mm for osx NSSearchField
 
-//#ifdef Q_OS_MAC
-//class CWizSearchWidget;
-//#endif
+#ifdef USECOCOATOOLBAR
+class CWizSearchWidget;
 
-//#ifndef Q_OS_MAC
+#else
 
 class CWizExplorerApp;
 
@@ -24,13 +23,23 @@ class CWizSearchEdit : public QLineEdit
 public:
     CWizSearchEdit(QWidget* parent = 0);
 
+public slots:
+    void on_actionAdvancedSearch();
+    void on_addCustomSearch();
+
+signals:
+    void advanceSearchRequest();
+    void addCustomSearchRequest();
+
 protected:
     void paintEvent(QPaintEvent* event);
     void mousePressEvent(QMouseEvent* event);
+    void mouseMoveEvent(QMouseEvent* event);
 
 private:
     QPixmap m_searchIcon;
     QPixmap m_deleteIcon;
+    QMenu* m_menu;
 };
 
 class CWizSearchWidget : public QWidget
@@ -54,10 +63,12 @@ private:
     int m_widthHint;
 
 Q_SIGNALS:
+    void advancedSearchRequest();
+    void addCustomSearchRequest();
     void doSearch(const QString& keywords);
 };
 
-//#endif // Q_OS_MAC
+#endif // Q_OS_MAC
 
 
 

@@ -13,8 +13,8 @@ CWizDatabaseManager* CWizDatabaseManager::instance()
     return m_instance;
 }
 
-CWizDatabaseManager::CWizDatabaseManager(const QString& strUserId)
-    : m_strUserId(strUserId)
+CWizDatabaseManager::CWizDatabaseManager(const QString& strAccountFolderName)
+    : m_strAccountFolderName(strAccountFolderName)
     , m_mutex(QMutex::Recursive)
 {
     Q_ASSERT(!m_instance);
@@ -30,14 +30,14 @@ CWizDatabaseManager::~CWizDatabaseManager()
 
 bool CWizDatabaseManager::openWithInfo(const QString& strKbGUID, const WIZDATABASEINFO* pInfo)
 {
-    Q_ASSERT(!m_strUserId.isEmpty());
+    Q_ASSERT(!m_strAccountFolderName.isEmpty());
 
     if (isOpened(strKbGUID))
         return true;
 
     CWizDatabase* db = new CWizDatabase();
 
-    if (!db->Open(m_strUserId, strKbGUID)) {
+    if (!db->Open(m_strAccountFolderName, strKbGUID)) {
         delete db;
         return false;
     }
@@ -253,6 +253,9 @@ void CWizDatabaseManager::initSignals(CWizDatabase* db)
     connect(db, SIGNAL(databaseBizChanged(const QString&)),
             SIGNAL(databaseBizchanged(const QString&)));
 
+    connect(db, SIGNAL(userIdChanged(QString,QString)),
+            SIGNAL(userIdChanged(QString,QString)));
+
     connect(db, SIGNAL(tagCreated(const WIZTAGDATA&)),
             SIGNAL(tagCreated(const WIZTAGDATA&)));
     connect(db, SIGNAL(tagModified(const WIZTAGDATA&, const WIZTAGDATA&)),
@@ -277,10 +280,16 @@ void CWizDatabaseManager::initSignals(CWizDatabase* db)
     connect(db, SIGNAL(documentTagModified(const WIZDOCUMENTDATA&)),
             SIGNAL(documentTagModified(const WIZDOCUMENTDATA&)));
 
+    connect(db, SIGNAL(documentReadCountChanged(const WIZDOCUMENTDATA&)),
+            SIGNAL(documentReadCountChanged(const WIZDOCUMENTDATA&)));
+
     connect(db, SIGNAL(documentDataModified(const WIZDOCUMENTDATA&)),
             SIGNAL(documentDataModified(const WIZDOCUMENTDATA&)));
     connect(db, SIGNAL(documentAbstractModified(const WIZDOCUMENTDATA&)),
             SIGNAL(documentAbstractModified(const WIZDOCUMENTDATA&)));
+
+    connect(db, SIGNAL(documentUploaded(QString,QString)),
+            SIGNAL(documentUploaded(QString,QString)));
 
     connect(db,SIGNAL(groupDocumentUnreadCountModified(QString)),
             SIGNAL(groupDocumentUnreadCountModified(QString)));
@@ -296,8 +305,20 @@ void CWizDatabaseManager::initSignals(CWizDatabase* db)
             SIGNAL(folderCreated(const QString&)));
     connect(db, SIGNAL(folderDeleted(const QString&)),
             SIGNAL(folderDeleted(const QString&)));
+    connect(db, SIGNAL(tagsPositionChanged(const QString&)),
+            SIGNAL(tagsPositionChanged(const QString&)));
     connect(db, SIGNAL(folderPositionChanged()),
             SIGNAL(folderPositionChanged()));
+
+    connect(db, SIGNAL(messageCreated(WIZMESSAGEDATA)),
+            SIGNAL(messageCreated(WIZMESSAGEDATA)));
+    connect(db, SIGNAL(messageModified(WIZMESSAGEDATA,WIZMESSAGEDATA)),
+            SIGNAL(messageModified(WIZMESSAGEDATA,WIZMESSAGEDATA)));
+    connect(db, SIGNAL(messageDeleted(WIZMESSAGEDATA)),
+            SIGNAL(messageDeleted(WIZMESSAGEDATA)));
+
+    connect(db, SIGNAL(favoritesChanged(QString)),
+            SIGNAL(favoritesChanged(QString)));
 }
 
 void CWizDatabaseManager::on_groupDatabaseOpened(CWizDatabase* pDb, const QString& strKbGUID)

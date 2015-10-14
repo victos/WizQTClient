@@ -50,6 +50,15 @@ try {
         WizEditor.onNoteLoadFinished();
     });
 
+    //NOTE: 不能监听contentchange事件，否则仅仅进入编辑状态就会修改笔记为已修改
+    // editor.addListener('contentchange', function() {
+    //     WizEditor.setContentsChanged(true);
+    // });
+
+    editor.addListener('wizcontentchange', function() {
+        WizEditor.setContentsChanged(true);
+    });
+
 } catch (err) {
     alert(err);
 }
@@ -134,6 +143,24 @@ function updateCurrentNoteHtml()
         wiz_html = WizEditor.currentNoteHtml();
         wiz_head = WizEditor.currentNoteHead();
     }
+}
+
+function updateEditorHtml(bEditing)
+{
+    editor.reset();
+    editor.document.head.innerHTML = WizEditor.currentNoteHead();
+    editor.document.body.innerHTML = WizEditor.currentNoteHtml();
+    editor.fireEvent('aftersetcontent');
+    editor.fireEvent('contentchange');
+
+    bEditing ? editor.setEnabled() : editor.setDisabled();
+
+    window.UE.utils.domReady(function() {
+        //special process to remove css style added by phone
+        WizSpecialProcessForPhoneCss();
+        WizEditor.initCheckListEnvironment();
+        editor.window.scrollTo(0, 0);
+    });
 }
 
 function updateCss()
@@ -271,7 +298,56 @@ function WizInsertCodeHtml(html) {
     editor.execCommand('insertHtml', html, true);
 }
 
+function WizAddCssForCode(cssFile) {
+    console.log("WizAddCssForCode called , css file " + cssFile);
+    var doc = editor.document;
+    if (!doc)
+        return;
+    //
+    var oldLink = doc.getElementById('wiz_code_highlight_link');
+    if (oldLink) {
+        console.log("old css link find, try to remove");
+        oldLink.parentNode.removeChild(oldLink);
+    }
+    //
+    var link = doc.createElement('link');
+    if (!link)
+        return;
+    try {
+        link.type = 'text/css';
+        link.rel = 'stylesheet';
+        link.id = 'wiz_code_highlight_link';
+        link.href = cssFile;
+        //
+        if (!doc.head)
+        {
+            doc.insertBefore(doc.createElement('head'), doc.body);
+        }
+        doc.head.appendChild(link);
+    }
+    catch(e) {
+
+    }
+}
 
 function WizClearEditorHeight() {
     editor.document.body.style.height='';
+}
+
+function WizGetMailSender () {
+	var items = editor.document.getElementsByTagName('input');
+	//
+	for (var i = items.length - 1; i >= 0; i--) {
+		if (items[i].type == "hidden" && RegExp("\\bwiz_mail_reply_to\\b").test(items[i].value)){
+			var str = items[i].value;
+			return str.replace("wiz_mail_reply_to/", "");
+		}
+	}
+	//
+	for (var i = items.length - 1; i >= 0; i--) {
+		if (items[i].type == "hidden" && RegExp("\\bwiz_mail_from\\b").test(items[i].value)){
+			var str = items[i].value;
+			return str.replace("wiz_mail_from/", "");
+		}
+	}
 }

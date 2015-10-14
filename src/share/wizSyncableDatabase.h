@@ -24,6 +24,7 @@ struct IWizSyncableDatabase
     virtual bool SetObjectLocalServerVersion(const QString& strObjectGUID,
                                              const QString& strObjectType,
                                              qint64 nVersion) = 0;
+    virtual void OnObjectUploaded(const QString& strObjectGUID, const QString& strObjectType) = 0;
 
     virtual bool DocumentFromGUID(const QString& strGUID,
                                   WIZDOCUMENTDATA& dataExists) = 0;
@@ -53,11 +54,16 @@ struct IWizSyncableDatabase
     virtual bool GetModifiedStyleList(CWizStyleDataArray& arrayData) = 0;
     virtual bool GetModifiedDocumentList(CWizDocumentDataArray& arrayData) = 0;
     virtual bool GetModifiedAttachmentList(CWizDocumentAttachmentDataArray& arrayData) = 0;
+    virtual bool GetModifiedMessageList(CWizMessageDataArray& arrayData) = 0;
 
     virtual bool InitDocumentData(const QString& strGUID, WIZDOCUMENTDATAEX& data, UINT part) = 0;
     virtual bool InitAttachmentData(const QString& strGUID, WIZDOCUMENTATTACHMENTDATAEX& data, UINT part) = 0;
 
     virtual bool OnUploadObject(const QString& strGUID, const QString& strObjectType) = 0;
+
+    virtual bool ModifyDocumentsVersion(CWizDocumentDataArray& arrayData) = 0;
+
+    virtual bool ModifyMessagesLocalChanged(CWizMessageDataArray &arrayData) = 0;
 
     virtual bool OnDownloadGroups(const CWizGroupDataArray& arrayGroup) = 0;
     virtual bool OnDownloadBizs(const CWizBizDataArray& arrayBiz) = 0;
@@ -69,6 +75,8 @@ struct IWizSyncableDatabase
     virtual void SetUserInfo(const WIZUSERINFO& info) = 0;
 
     virtual bool IsGroup() = 0;
+    virtual bool HasBiz() = 0;
+
     virtual bool IsGroupAdmin() = 0;
     virtual bool IsGroupSuper() = 0;
     virtual bool IsGroupEditor() = 0;
@@ -111,21 +119,25 @@ struct IWizSyncableDatabase
 
     //virtual CComPtr<IWizBizUserCollection> GetBizUsers() = 0;
     virtual void GetAllBizUserIds(CWizStdStringArray& arrayText) = 0;
+    virtual bool GetAllBizUsers(CWizBizUserDataArray& arrayUser) = 0;
     virtual bool GetBizGUID(const QString& strGroupGUID, QString& strBizGUID) = 0;
 
     //virtual CComPtr<IWizDocument> GetDocumentByGUID(const QString& strDocumentGUID) = 0;
     virtual bool OnDownloadMessages(const CWizUserMessageDataArray& arrayMessage) = 0;
 
     virtual void ClearLastSyncError() = 0;
+    virtual QString GetLastSyncErrorMessage() = 0;
     virtual void OnTrafficLimit(const QString& strErrorMessage) = 0;
     virtual void OnStorageLimit(const QString& strErrorMessage) = 0;
+    virtual void OnNoteCountLimit(const QString& strErrorMessage) = 0;
     virtual void OnBizServiceExpr(const QString& strBizGUID, const QString& strErrorMessage) = 0;
-    virtual void OnBizNoteCountLimit(const QString& strBizGUID, const QString& strErrorMessage) = 0;
     virtual bool IsTrafficLimit() = 0;
     virtual bool IsStorageLimit() = 0;
+    virtual bool IsNoteCountLimit() = 0;
     virtual bool IsBizServiceExpr(const QString& strBizGUID) = 0;
-    virtual bool IsBizNoteCountLimit(const QString& strBizGUID) = 0;
     virtual bool GetStorageLimitMessage(QString& strErrorMessage) = 0;
+    virtual bool GetTrafficLimitMessage(QString& strErrorMessage) = 0;
+    virtual bool GetNoteCountLimit(QString& strErrorMessage) = 0;
 
     virtual bool setMeta(const QString& strSection, const QString& strKey, const QString& strValue) = 0;
     virtual QString meta(const QString& strSection, const QString& strKey) = 0;
@@ -136,13 +148,20 @@ struct IWizSyncableDatabase
 
 
 
-enum WizKMSyncProgressStatusType
+enum WizKMSyncProgressMessageType
 {
-    wizhttpstatustypeNormal,
-    wizhttpstatustypeWarning,
-    wizhttpstatustypeError
+    wizSyncMessageNormal,
+    wizSyncMessageWarning,
+    wizSyncMeesageError
 };
 
+
+enum WizBubbleMessageType {
+    wizBubbleNoMessage,
+    wizBubbleNormal,
+    wizBubbleMessageCenter,
+    wizBubbleUnknowMessage
+};
 
 
 struct IWizKMSyncEvents
@@ -155,7 +174,10 @@ public:
     }
 
     virtual void OnSyncProgress(int pos) {}
-    virtual HRESULT OnText(WizKMSyncProgressStatusType type, const QString& strStatus) = 0;
+    virtual HRESULT OnText(WizKMSyncProgressMessageType type, const QString& strStatus) = 0;
+    virtual HRESULT OnMessage(WizKMSyncProgressMessageType type, const QString& strTitle, const QString& strMessage) = 0;
+    virtual HRESULT OnBubbleNotification(const QVariant& param) = 0;
+
     virtual void SetStop(bool b) { m_bStop = b; }
     virtual bool IsStop() const { return m_bStop; }
     virtual void SetLastErrorCode(int nErrorCode) { m_nLastError = nErrorCode; }
@@ -166,14 +188,15 @@ public:
     virtual void OnTrafficLimit(IWizSyncableDatabase* pDatabase) {}
     virtual void OnStorageLimit(IWizSyncableDatabase* pDatabase) {}
     virtual void OnBizServiceExpr(IWizSyncableDatabase* pDatabase) {}
+    virtual void OnBizNoteCountLimit(IWizSyncableDatabase* pDatabase) {}
     virtual void OnUploadDocument(const QString& strDocumentGUID, bool bDone) {}
     virtual void OnBeginKb(const QString& strKbGUID) {}
     virtual void OnEndKb(const QString& strKbGUID) {}
 
 public:
-    void OnStatus(const QString& strText) { OnText(wizhttpstatustypeNormal, strText); }
-    void OnWarning(const QString& strText) { OnText(wizhttpstatustypeWarning, strText); }
-    void OnError(const QString& strText) { OnText(wizhttpstatustypeError, strText); }
+    void OnStatus(const QString& strText) { OnText(wizSyncMessageNormal, strText); }
+    void OnWarning(const QString& strText) { OnText(wizSyncMessageWarning, strText); }
+    void OnError(const QString& strText) { OnText(wizSyncMeesageError, strText); }
 
 private:
     bool m_bStop;

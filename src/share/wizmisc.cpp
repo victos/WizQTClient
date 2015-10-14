@@ -11,14 +11,26 @@
 #include <QPixmap>
 #include <QPainter>
 #include <QThread>
+#include <QFileIconProvider>
+#include <QSettings>
 
 #include <QtCore>
 //#include <QtNetwork>
 #include <QNetworkConfigurationManager>
+#include <QNetworkAccessManager>
+#include <QNetworkRequest>
+#include <QNetworkReply>
 #include "utils/logger.h"
 #include "utils/pathresolve.h"
+#include "utils/stylehelper.h"
+#include "utils/misc.h"
 #include "mac/wizmachelper.h"
 #include "sync/apientry.h"
+#include "share/wizAnalyzer.h"
+#include "share/wizObjectOperator.h"
+#include "wizDatabaseManager.h"
+#include "wizObjectDataDownloader.h"
+#include "wizProgressDialog.h"
 
 
 #ifndef MAX_PATH
@@ -41,12 +53,6 @@ QString WizGetFileSizeHumanReadalbe(const QString& strFileName)
         Q_ASSERT(0);
         return QString();
     }
-}
-
-qint64 WizGetFileSize(const CString& strFileName)
-{
-    QFileInfo info(strFileName);
-    return info.size();
 }
 
 void WizPathAddBackslash(QString& strPath)
@@ -119,62 +125,6 @@ BOOL WizDeleteAllFilesInFolder(const CString& strPath)
     return TRUE;
 }
 
-
-CString WizExtractFilePath(const CString& strFileName)
-{
-    CString str = strFileName;
-    str.Replace('\\', '/');
-    int index = str.lastIndexOf('/');
-    if (-1 == index)
-        return strFileName;
-    //
-    return str.left(index + 1); //include separator
-}
-
-
-CString WizExtractLastPathName(const CString& strFileName)
-{
-    CString strPath = ::WizPathRemoveBackslash2(strFileName);
-    return ::WizExtractFileName(strPath);
-}
-
-QString WizExtractFileName(const QString& strFileName)
-{
-    QString str = strFileName;
-    str.replace('\\', '/');
-    int index = str.lastIndexOf('/');
-    if (-1 == index)
-        return strFileName;
-
-    return strFileName.right(str.length() - index - 1);
-}
-
-QString WizExtractFileTitle(const QString &strFileName)
-{
-    QString strName = WizExtractFileName(strFileName);
-
-    int index = strName.lastIndexOf('.');
-    if (-1 == index)
-        return strName;
-
-    return strName.left(index);
-}
-
-CString WizExtractTitleTemplate(const CString& strFileName)
-{
-    return strFileName;
-}
-
-CString WizExtractFileExt(const CString& strFileName)
-{
-    CString strName = WizExtractFileName(strFileName);
-    //
-    int index = strName.lastIndexOf('.');
-    if (-1 == index)
-        return "";
-    //
-    return strName.right(strName.GetLength() - index);  //include .
-}
 
 void WizEnumFiles(const QString& path, const QString& strExts, CWizStdStringArray& arrayFiles, UINT uFlags)
 {
@@ -269,9 +219,9 @@ void WizGetNextFileName(CString& strFileName)
     if (!PathFileExists(strFileName))
         return;
     //
-    CString strPath = WizExtractFilePath(strFileName);
-    CString strTitle = WizExtractFileTitle(strFileName);
-    CString strExt = WizExtractFileExt(strFileName);
+    CString strPath = Utils::Misc::extractFilePath(strFileName);
+    CString strTitle = Utils::Misc::extractFileTitle(strFileName);
+    CString strExt = Utils::Misc::extractFileExt(strFileName);
     //
     //
     const UINT nMaxLength = MAX_PATH - 10;
@@ -567,7 +517,6 @@ BOOL WizIso8601StringToDateTime(CString str, COleDateTime& t, CString& strError)
     str.Insert(4, '-');
     return WizStringToDateTime(str, t, strError);
 }
-
 
 CString WizDateTimeToIso8601String(const COleDateTime& t)
 {
@@ -1103,7 +1052,7 @@ bool WizLoadUnicodeTextFromBuffer2(char* pBuffer, size_t nLen, QString& strText,
         }
         else
         {
-            CString strExt = WizExtractFileExt(CString(strFileName));
+            CString strExt = Utils::Misc::extractFileExt(CString(strFileName));
             strExt.MakeLower();
             if (bForceHTML || strExt.startsWith(".htm"))
             {
@@ -1661,7 +1610,7 @@ void WizGetSkins(QStringList& skins)
         if (!PathFileExists(strSkinFileName))
             continue;
 
-        skins.append(WizExtractLastPathName(path));
+        skins.append(Utils::Misc::extractLastPathName(path));
     }
 }
 
@@ -1894,9 +1843,9 @@ QIcon WizLoadSkinIcon3(const QString& strIconName, QIcon::Mode mode)
 // FIXME: obosolete, use CWizHtmlToPlainText class instead!
 void WizHtml2Text(const QString& strHtml, QString& strText)
 {
-    QTextDocument* doc = new QTextDocument();
-    doc->setHtml(strHtml);
-    strText = doc->toPlainText();
+    QTextDocument doc;
+    doc.setHtml(strHtml);
+    strText = doc.toPlainText();
     QChar ch(0xfffc);
     strText.replace(ch, QChar(' '));
     return;
@@ -1905,6 +1854,12 @@ void WizHtml2Text(const QString& strHtml, QString& strText)
 QString getImageHtmlLabelByFile(const QString& strImageFile)
 {
     return QString("<div><img border=\"0\" src=\"file://%1\" /></div>").arg(strImageFile);
+}
+
+QString WizGetImageHtmlLabelWithLink(const QString& imageFile, const QSize& imgSize, const QString& linkHref)
+{
+    return QString("<div><a href=\"%1\"><img border=\"0\" width=\"%2px\" height=\"%3px\" src=\"file://%4\" /></a></div>")
+            .arg(linkHref).arg(imgSize.width()).arg(imgSize.height()).arg(imageFile);
 }
 
 bool WizImage2Html(const QString& strImageFile, QString& strHtml, bool bUseCopyFile)
@@ -1935,13 +1890,19 @@ void WizDeleteFolder(const CString& strPath)
     if (dir.isRoot())
         return;
 
-    dir.rmdir(::WizExtractLastPathName(strPath));
+    dir = QDir(strPath);
+
+#if QT_VERSION > 0x050000
+    dir.removeRecursively();
+#else
+    dir.rmdir(Utils::Misc::extractLastPathName(strPath));
+#endif
 }
 
 void WizDeleteFile(const CString& strFileName)
 {
-    QDir dir(::WizExtractFilePath(strFileName));
-    dir.remove(WizExtractFileName(strFileName));
+    QDir dir(::Utils::Misc::extractFilePath(strFileName));
+    dir.remove(Utils::Misc::extractFileName(strFileName));
 }
 
 
@@ -1989,8 +1950,8 @@ void WizMakeValidFileNameNoPathLimitLength(CString& strFileName, int nMaxTitleLe
 {
     WizMakeValidFileNameNoPath(strFileName);
     //
-    CString strTitle = WizExtractFileTitle(strFileName);
-    CString strExt = WizExtractFileExt(strFileName);
+    CString strTitle = Utils::Misc::extractFileTitle(strFileName);
+    CString strExt = Utils::Misc::extractFileExt(strFileName);
     //
     if (strTitle.GetLength() > nMaxTitleLength)
     {
@@ -2005,7 +1966,7 @@ void WizMakeValidFileNameNoPathLimitFullNameLength(CString& strFileName, int nMa
     if (strFileName.GetLength() <= nMaxFullNameLength)
         return;
     //
-    CString strExt = WizExtractFileExt(strFileName);
+    CString strExt = Utils::Misc::extractFileExt(strFileName);
     //
     int nMaxTitleLength = nMaxFullNameLength - strExt.GetLength();
     //
@@ -2109,13 +2070,19 @@ CWaitCursor::~CWaitCursor()
 
 
 
-void showWebDialogWithToken(const QString& windowTitle, const QString& url, QWidget* parent)
+void WizShowWebDialogWithToken(const QString& windowTitle, const QString& url, QWidget* parent, const QSize& sz, bool dialogResizable)
 {
-    CWizWebSettingsDialog* pDlg = new CWizWebSettingsWithTokenDialog(url, QSize(800, 480), parent);
-    pDlg->setWindowTitle(windowTitle);
-    pDlg->exec();
-    //
-    delete pDlg;
+    QString strFuncName = windowTitle;
+    strFuncName = "Dialog"+strFuncName.replace(" ", "");
+    CWizFunctionDurationLogger logger(strFuncName);
+
+    CWizWebSettingsWithTokenDialog pDlg(url, sz, parent);
+    if (dialogResizable)
+    {
+        pDlg.setMaximumSize(QSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX));
+    }
+    pDlg.setWindowTitle(windowTitle);
+    pDlg.exec();
 }
 
 
@@ -2189,6 +2156,34 @@ QString WizGetHtmlBodyContent(const QString& strHtml)
     return strBody;
 }
 
+bool WizGetBodyContentFromHtml(QString& strHtml, bool bNeedTextParse)
+{
+    QRegExp regHead("</?head[^>]*>", Qt::CaseInsensitive);
+    if (strHtml.contains(regHead))
+    {
+        if (bNeedTextParse)
+        {
+            QRegExp regHeadContant("<head[^>]*>[\\s\\S]*</head>");
+            int headIndex = regHeadContant.indexIn(strHtml);
+            if (headIndex > -1)
+            {
+                QString strHead = regHeadContant.cap(0);
+                if (strHead.contains("Cocoa HTML Writer"))
+                {
+                    // convert mass html to rtf, then convert rft to html
+                    QTextDocument textParase;
+                    textParase.setHtml(strHtml);
+                    strHtml = textParase.toHtml();
+                }
+            }
+        }
+
+        strHtml = WizGetHtmlBodyContent(strHtml);
+    }
+
+    return true;
+}
+
 
 bool WizCopyFolder(const QString& strSrcDir, const QString& strDestDir, bool bCoverFileIfExist)
 {
@@ -2225,12 +2220,12 @@ bool WizCopyFolder(const QString& strSrcDir, const QString& strDestDir, bool bCo
 }
 
 
-void showDocumentHistory(const WIZDOCUMENTDATA& doc, QWidget* parent)
+void WizShowDocumentHistory(const WIZDOCUMENTDATA& doc, QWidget* parent)
 {
     CString strExt = WizFormatString2(_T("obj_guid=%1&kb_guid=%2&obj_type=document"),
                                       doc.strGUID, doc.strKbGUID);
-     QString strUrl = WizService::ApiEntry::standardCommandUrl("document_history", WIZ_TOKEN_IN_URL_REPLACE_PART, strExt);
-     showWebDialogWithToken(QObject::tr("Note History"), strUrl, parent);
+    QString strUrl = WizService::CommonApiEntry::standardCommandUrl("document_history", WIZ_TOKEN_IN_URL_REPLACE_PART, strExt);
+    WizShowWebDialogWithToken(QObject::tr("Note History"), strUrl, parent, QSize(1000, 500), true);
 }
 
 
@@ -2254,7 +2249,7 @@ QChar getWizSearchSplitChar()
 }
 
 
-void scaleIconSizeForRetina(QSize& size)
+void WizScaleIconSizeForRetina(QSize& size)
 {
 #ifdef Q_OS_MAC
     if (qApp->devicePixelRatio() >= 2)
@@ -2292,4 +2287,398 @@ QString GetParamFromWizKMURL(const QString& strURL, const QString& strParamName)
     }
 
     return QString();
+}
+
+
+QString WizStr2Title(const QString& str)
+{
+    int idx = str.size() - 1;
+    static QString eol("，。？~!#$%^&*()_+{}|:\"<>?,./;'[]\\-=\n\r\t"); // end of line
+    foreach(QChar c, eol) {
+        int i = str.indexOf(c, 0, Qt::CaseInsensitive);
+        if (i != -1 && i < idx) {
+            idx = i;
+        }
+    }
+
+    return str.left(idx);
+}
+
+bool WizCreateThumbnailForAttachment(QImage& img, const QString& fileName,
+                                  const QString& bgImage, const QSize& iconSize)
+{
+    QFileInfo info(fileName);
+    if (!info.exists())
+        return false;
+
+    // get info text and calculate width of image
+    const int nMb = 1024 * 1024;
+    int nIconMargin = 4;
+    QString fileSize = info.size() > 1024 ? (info.size() > nMb ? QString(QString::number(qCeil(info.size() / (double)nMb)) + " MB")
+                                                         : QString(QString::number(qCeil(info.size() / (double)1024)) + " KB")) :
+                                      QString(QString::number(info.size()) + " B");
+    QString infoText = QDate::currentDate().toString(Qt::ISODate) + " " + QTime::currentTime().toString() + ", " + fileSize;
+
+    bool isHighPix = WizIsHighPixel();
+    QFont font;
+    QFontMetrics fm(font);
+    int nTextWidth = fm.width(infoText);
+    int nWidth = nTextWidth + nIconMargin * 4 + iconSize.width();
+    QImage imageBg(bgImage);
+    int nHeight = imageBg.height();
+
+    // draw icon and text on image
+    int nBgWidth = isHighPix ? 2 * nWidth : nWidth;
+    int nBgHeight = isHighPix ? 2 * nHeight : nHeight;
+    img = QImage(nBgWidth, nBgHeight, QImage::Format_RGB888);
+    imageBg.scaledToWidth(nBgWidth);
+    QPainter p(&img);
+    p.drawImage(QRect(0, 0, nBgWidth, nBgHeight), imageBg);
+
+
+    if (isHighPix)
+    {
+        // 如果是高分辨率的屏幕，则放大将坐标放大二倍进行绘制，使用时进行缩放，否则会造成图片模糊。
+        Utils::StyleHelper::initPainterByDevice(&p);
+    }
+    QFileIconProvider ip;
+    QIcon icon = ip.icon(info);
+    QPixmap pixIcon = icon.pixmap(iconSize);
+    p.drawPixmap(nIconMargin, (nHeight - iconSize.height()) / 2, pixIcon);
+
+    //
+    QColor cText = QColor("#3c4d81");
+    p.setPen(QPen(cText));
+    QRect titleRect(QPoint(nIconMargin * 2 + iconSize.width(), nIconMargin), QPoint(nWidth, nHeight / 2));
+    QString strTitle = fm.elidedText(info.fileName(), Qt::ElideMiddle, titleRect.width() - nIconMargin * 2);
+    p.drawText(titleRect, strTitle);
+    //
+    QRect infoRect(QPoint(nIconMargin * 2 + iconSize.width(), nHeight / 2),
+                      QPoint(nWidth, nHeight));
+    p.drawText(infoRect, infoText);
+    return true;
+}
+
+
+COleDateTime WizIniReadDateTimeDef(const CString& strFile, const CString& strSection, const CString& strKey, COleDateTime defaultData)
+{
+    QSettings settings(strFile, QSettings::IniFormat);
+    QString strStr = strSection.IsEmpty() ? strKey : strSection + "/" + strKey;
+    QDateTime dt = settings.value(strStr, defaultData).toDateTime();
+
+    return dt;
+}
+
+
+CString WizIniReadStringDef(const CString& strFile, const CString& strSection, const CString& strKey)
+{
+    QSettings settings(strFile, QSettings::IniFormat);
+    QString strStr = strSection.IsEmpty() ? strKey : strSection + "/" + strKey;
+    return settings.value(strStr).toString();
+}
+
+
+void WizIniWriteString(const CString& strFile, const CString& strSection, const CString& strKey, const CString& strValue)
+{
+    QSettings settings(strFile, QSettings::IniFormat);
+    QString strStr = strSection.IsEmpty() ? strKey : strSection + "/" + strKey;
+    settings.setValue(strStr, strValue);
+}
+
+
+int WizIniReadIntDef(const CString& strFile, const CString& strSection, const CString& strKey, int defaultValue)
+{
+    QSettings settings(strFile, QSettings::IniFormat);
+    QString strStr = strSection.IsEmpty() ? strKey : strSection + "/" + strKey;
+    return settings.value(strStr, defaultValue).toInt();
+}
+
+
+void WizIniWriteInt(const CString& strFile, const CString& strSection, const CString& strKey, int nValue)
+{
+    QSettings settings(strFile, QSettings::IniFormat);
+    QString strStr = strSection.IsEmpty() ? strKey : strSection + "/" + strKey;
+    settings.setValue(strStr, nValue);
+}
+
+
+void WizIniWriteDateTime(const CString& strFile, const CString& strSection, const CString& strKey, COleDateTime dateTime)
+{
+    QSettings settings(strFile, QSettings::IniFormat);
+    QString strStr = strSection.IsEmpty() ? strKey : strSection + "/" + strKey;
+    settings.setValue(strStr, dateTime);
+}
+
+
+CWizIniFileEx::CWizIniFileEx()
+    : m_settings(0)
+{
+}
+
+CWizIniFileEx::~CWizIniFileEx()
+{
+    if (m_settings)
+        delete m_settings;
+}
+
+void CWizIniFileEx::LoadFromFile(const QString& strFile)
+{
+    m_settings = new QSettings(strFile, QSettings::IniFormat);
+}
+
+void CWizIniFileEx::GetSection(const QString& section, CWizStdStringArray& arrayData)
+{
+    m_settings->beginGroup(section);
+    QStringList childList = m_settings->childKeys();
+
+    foreach (QString child, childList) {
+        QString strLine = child + "=" + m_settings->value(child).toString();
+        arrayData.push_back(strLine);
+    }
+    m_settings->endGroup();
+}
+
+void CWizIniFileEx::GetSection(const QString& section, QMap<QString, QString>& dataMap)
+{
+    m_settings->beginGroup(section);
+    QStringList childList = m_settings->childKeys();
+    foreach (QString child, childList) {
+        dataMap.insert(child, m_settings->value(child).toString());
+    }
+    m_settings->endGroup();
+}
+
+void CWizIniFileEx::GetSection(const QString& section, QMap<QByteArray, QByteArray>& dataMap)
+{
+    m_settings->beginGroup(section);
+    QStringList childList = m_settings->childKeys();
+    foreach (QString child, childList) {
+        dataMap.insert(child.toUtf8(), m_settings->value(child).toString().toUtf8());
+    }
+    m_settings->endGroup();
+}
+
+
+void WizShowAttachmentHistory(const WIZDOCUMENTATTACHMENTDATA& attach, QWidget* parent)
+{
+    CString strExt = WizFormatString2(_T("obj_guid=%1&kb_guid=%2&obj_type=attachment"),
+                                      attach.strGUID, attach.strKbGUID);
+    QString strUrl = WizService::CommonApiEntry::standardCommandUrl("document_history", WIZ_TOKEN_IN_URL_REPLACE_PART, strExt);
+    WizShowWebDialogWithToken(QObject::tr("Attachment History"), strUrl, parent, QSize(1000, 500), true);
+}
+
+
+bool WizIsDocumentContainsFrameset(const WIZDOCUMENTDATA& doc)
+{
+    QStringList fileTypes;
+    fileTypes << ".xls" << ".xlsx";
+    return fileTypes.contains(doc.strFileType);
+}
+
+void WizMime2Note(const QByteArray& bMime, CWizDatabaseManager& dbMgr, CWizDocumentDataArray& arrayDocument)
+{
+    QString strMime(QString::fromUtf8(bMime));
+    QStringList lsNotes = strMime.split(";");
+    for (int i = 0; i < lsNotes.size(); i++) {
+        QStringList lsMeta = lsNotes[i].split(":");
+        //qDebug()<<lsMeta;
+        Q_ASSERT(lsMeta.size() == 2);
+
+        CWizDatabase& db = dbMgr.db(lsMeta[0]);
+
+        WIZDOCUMENTDATA data;
+        if (db.DocumentFromGUID(lsMeta[1], data))
+            arrayDocument.push_back(data);
+    }
+}
+
+
+bool WizMakeSureDocumentExistAndBlockWidthDialog(CWizDatabase& db, const WIZDOCUMENTDATA& doc,
+                              CWizObjectDataDownloaderHost* downloaderHost)
+{
+    if (doc.strGUID.isEmpty() || db.kbGUID() != doc.strKbGUID)
+        return false;
+
+    QString strFileName = db.GetDocumentFileName(doc.strGUID);
+    if (!db.IsDocumentDownloaded(doc.strGUID) || !PathFileExists(strFileName))
+    {
+        if (!downloaderHost)
+            return false;
+
+        CWizProgressDialog dlg(0, false);
+        dlg.setActionString(QObject::tr("Download Note %1 ...").arg(doc.strTitle));
+        dlg.setWindowTitle(QObject::tr("Downloading"));
+        dlg.setProgress(100,0);
+        QObject::connect(downloaderHost, SIGNAL(downloadProgress(QString,int,int)), &dlg, SLOT(setProgress(QString,int,int)));
+        QObject::connect(downloaderHost, SIGNAL(finished()), &dlg, SLOT(accept()));
+
+        downloaderHost->downloadData(doc);
+        dlg.exec();
+        //
+        downloaderHost->disconnect(&dlg);
+    }
+
+    return PathFileExists(strFileName);
+}
+
+
+bool WizMakeSureDocumentExistAndBlockWidthEventloop(CWizDatabase& db, const WIZDOCUMENTDATA& doc,
+                                                    CWizObjectDataDownloaderHost* downloaderHost)
+{
+    if (doc.strGUID.isEmpty() || db.kbGUID() != doc.strKbGUID)
+        return false;
+
+    QString strFileName = db.GetDocumentFileName(doc.strGUID);
+    if (!db.IsDocumentDownloaded(doc.strGUID) || !PathFileExists(strFileName))
+    {
+        if (!downloaderHost)
+            return false;
+
+        QEventLoop loop;
+        QObject::connect(downloaderHost, SIGNAL(finished()), &loop, SLOT(quit()));        
+        downloaderHost->downloadData(doc);
+        loop.exec();
+        //
+    }
+
+    return PathFileExists(strFileName);
+}
+
+bool WizMakeSureAttachmentExistAndBlockWidthEventloop(CWizDatabase& db, const WIZDOCUMENTATTACHMENTDATAEX& attachData,
+                                                      CWizObjectDataDownloaderHost* downloaderHost)
+{
+    if (attachData.strGUID.isEmpty() || attachData.strKbGUID != db.kbGUID())
+        return false;
+
+    QString strAttachmentFileName = db.GetAttachmentFileName(attachData.strGUID);
+    if (!db.IsAttachmentDownloaded(attachData.strDocumentGUID) && !PathFileExists(strAttachmentFileName))
+    {
+        if (!downloaderHost)
+            return false;
+
+        QEventLoop loop;
+        QObject::connect(downloaderHost, SIGNAL(finished()), &loop, SLOT(quit()));        
+        downloaderHost->downloadData(attachData);
+        loop.exec();
+        //
+    }
+
+    return PathFileExists(strAttachmentFileName);
+}
+
+
+bool WizMakeSureAttachmentExistAndBlockWidthDialog(CWizDatabase& db, const WIZDOCUMENTATTACHMENTDATAEX& attachData, CWizObjectDataDownloaderHost* downloaderHost)
+{
+    if (attachData.strGUID.isEmpty() || attachData.strKbGUID != db.kbGUID())
+        return false;
+
+    QString strAttachmentFileName = db.GetAttachmentFileName(attachData.strGUID);
+    if (!db.IsAttachmentDownloaded(attachData.strDocumentGUID) && !PathFileExists(strAttachmentFileName))
+    {
+        if (!downloaderHost)
+            return false;
+
+        CWizProgressDialog dlg(0, false);
+        dlg.setActionString(QObject::tr("Download Attachment %1 ...").arg(attachData.strName));
+        dlg.setWindowTitle(QObject::tr("Downloading"));
+        dlg.setProgress(100,0);
+        QObject::connect(downloaderHost, SIGNAL(downloadProgress(QString,int,int)), &dlg, SLOT(setProgress(QString,int,int)));
+        QObject::connect(downloaderHost, SIGNAL(finished()), &dlg, SLOT(accept()));
+
+        downloaderHost->downloadData(attachData);
+        dlg.exec();
+        //
+        downloaderHost->disconnect(&dlg);
+    }
+
+    return PathFileExists(strAttachmentFileName);
+}
+
+
+bool WizGetLocalUsers(QList<WizLocalUser>& userList)
+{
+    QString dataPath = Utils::PathResolve::dataStorePath();
+    QDir dir(dataPath);
+    QStringList folderList = dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    for (QString folder : folderList)
+    {
+        WizLocalUser user;
+        QString dataBase = dataPath + folder + "/data/index.db";
+        CWizIndex db;
+        if (!QFile::exists(dataBase) || !db.Open(dataBase))
+            continue;
+
+        user.strDataFolderName = folder;
+        user.strGuid = db.GetMetaDef("ACCOUNT", "GUID");
+        if (user.strGuid.isEmpty())
+        {
+            continue;
+        }
+        user.strUserId = db.GetMetaDef("ACCOUNT", "USERID");
+//        qDebug() << "load user id ; " << user.strUserId << "  folder : " << folder;
+        user.strUserId.isEmpty() ? (user.strUserId = folder) : 0;
+        user.nUserType = db.GetMetaDef("QT_WIZNOTE", "SERVERTYPE").toInt();
+        userList.append(user);
+    }
+    return true;
+}
+
+
+QString WizGetLocalUserId(const QList<WizLocalUser>& userList, const QString& strGuid)
+{
+    for (WizLocalUser user : userList)
+    {
+        if (strGuid == user.strGuid)
+            return user.strUserId;
+    }
+    return "";
+}
+
+
+bool WizURLDownloadToFile(const QString& url, const QString& fileName, bool isImage)
+{
+    QString newUrl = url;
+    QNetworkAccessManager netCtrl;
+    QNetworkReply* reply;
+    do
+    {
+        QNetworkRequest request(newUrl);
+        QEventLoop loop;
+        loop.connect(&netCtrl, SIGNAL(finished(QNetworkReply*)), SLOT(quit()));
+        reply = netCtrl.get(request);
+        loop.exec();
+
+        QUrl redirectUrl = reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
+        newUrl = redirectUrl.toString();
+    }
+    while (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute) == 301);
+
+    WizDeleteFile(fileName);
+
+    QByteArray byData = reply->readAll();
+    if (isImage)
+    {
+        QPixmap pix;
+        pix.loadFromData(byData);
+        return pix.save(fileName);
+    }
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    file.write(byData);
+    file.close();
+
+    return true;
+}
+
+
+QString WizGetLocalFolderName(const QList<WizLocalUser>& userList, const QString& strGuid)
+{
+    for (WizLocalUser user : userList)
+    {
+        if (strGuid == user.strGuid)
+            return user.strDataFolderName;
+    }
+    return "";
 }

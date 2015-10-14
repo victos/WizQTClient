@@ -51,7 +51,7 @@ public:
     void drawItem(QPainter*p, const QStyleOptionViewItemV4* vopt) const;
     void reloadItem(const QString& strKbGUID, const QString& strGUID);
 
-    void setAcceptAllItems(bool bAccept);
+    void setAcceptAllSearchItems(bool bAccept);
 
 protected:
     virtual void resizeEvent(QResizeEvent* event);
@@ -92,7 +92,7 @@ private:
 //#endif // Q_OS_MAC
 
     bool m_itemSelectionChanged;
-    bool m_accpetAllItems;
+    bool m_accpetAllSearchItems;
 
     QPointer<QPropertyAnimation> m_scrollAnimation;
 
@@ -108,8 +108,7 @@ private:
 
 public:
     void setDocuments(const CWizDocumentDataArray& arrayDocument);
-    void addDocuments(const CWizDocumentDataArray& arrayDocument);
-    int addDocument(const WIZDOCUMENTDATA& data, bool sort);
+    void appendDocuments(const CWizDocumentDataArray& arrayDocument);
 
     bool acceptDocument(const WIZDOCUMENTDATA& document);
     void addAndSelectDocument(const WIZDOCUMENTDATA& document);
@@ -140,6 +139,7 @@ public Q_SLOTS:
     void on_document_created(const WIZDOCUMENTDATA& document);
     void on_document_modified(const WIZDOCUMENTDATA& documentOld, const WIZDOCUMENTDATA& documentNew);
     void on_document_deleted(const WIZDOCUMENTDATA& document);
+    void on_documentReadCount_changed(const WIZDOCUMENTDATA& document);
 
     // message related signals
     //void on_message_created(const WIZMESSAGEDATA& data);
@@ -157,6 +157,7 @@ public Q_SLOTS:
     void on_action_encryptDocument();
     void on_action_cancelEncryption();
     void on_action_alwaysOnTop();
+    void on_action_addToShortcuts();
 
     void on_action_moveDocument();
     void on_action_moveDocument_confirmed(int result);
@@ -167,6 +168,7 @@ public Q_SLOTS:
     void on_action_showDocumentInFloatWindow();
     void on_action_copyDocumentLink();
     void on_action_documentHistory();
+    void on_action_shareDocumentByLink();
 
     void on_menu_aboutToHide();
 
@@ -188,11 +190,29 @@ Q_SIGNALS:
     void documentCountChanged();
     void lastDocumentDeleted();
     void documentsSelectionChanged();
-
+    void shareDocumentByLinkRequest(const QString& strKbGUID, const QString& strGUID);
+    void changeUploadRequest(const QString& strKbGUID);
+    void addDocumentToShortcutsRequest(const WIZDOCUMENTDATA& doc);
 
 private:
     int numOfEncryptedDocuments(const CWizDocumentDataArray& docArray);
     void setEncryptDocumentActionEnable(bool enable);
+    //    
+    int addDocument(const WIZDOCUMENTDATA& data, bool sort);
+    void addDocument(const WIZDOCUMENTDATA &doc);
+
+    bool acceptDocumentChange(const WIZDOCUMENTDATA &document);
+
+    //
+    void moveDocumentsToPersonalFolder(const CWizDocumentDataArray& arrayDocument, const QString& targetFolder);
+    void moveDocumentsToGroupFolder(const CWizDocumentDataArray& arrayDocument, const WIZTAGDATA& targetTag);
+    void copyDocumentsToPersonalFolder(const CWizDocumentDataArray& arrayDocument, const QString& targetFolder,
+                                      bool keepDocTime, bool keepTag);
+    void copyDocumentsToGroupFolder(const CWizDocumentDataArray& arrayDocument, const WIZTAGDATA& targetTag,
+                                    bool keepDocTime);
+
+    //
+    void duplicateDocuments(const CWizDocumentDataArray& arrayDocument);
 };
 
 

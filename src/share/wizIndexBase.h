@@ -36,6 +36,10 @@ public:
     QString GetDatabasePath() const { return m_strFileName; }
     virtual QString GetDefaultNoteLocation() const { return LOCATION_DEFAULT; }
 
+    virtual bool setTableStructureVersion(const QString& strVersion) = 0;
+    virtual QString getTableStructureVersion() = 0;
+    bool updateTableStructure(int oldVersion);
+
     /* Raw query*/
 
     /* Tags */
@@ -43,6 +47,7 @@ public:
     bool GetRootTags(CWizTagDataArray& arrayTag);
     bool GetChildTags(const CString& strParentTagGUID, CWizTagDataArray& arrayTag); // 1 level
     bool GetAllChildTags(const CString& strParentTagGUID, CWizTagDataArray& arrayTag);
+    bool GetAllTagsWithErrorParent(CWizTagDataArray& arrayTag);
 
     // used to test whether tag have child or not
     bool GetChildTagsSize(const CString& strParentTagGUID, int& size); // 1 level
@@ -71,6 +76,8 @@ public:
 
     // messages
     bool messageFromId(qint64 id, WIZMESSAGEDATA& data);
+    bool messageFromUserGUID(const QString& userGUID, CWizMessageDataArray& arrayMessage);
+    bool unreadMessageFromUserGUID(const QString& userGUID, CWizMessageDataArray& arrayMessage);
     bool messageFromDocumentGUID(const QString& strGUID, WIZMESSAGEDATA& data);
 
     // biz users, one user may in different biz group
@@ -125,6 +132,9 @@ protected:
 
     static CString FormatDeleteSQLFormat(const CString& strTableName,
                                          const CString& strKey);
+
+    static CString FormatDeleteSQLByWhere(const CString& strTableName,
+                                         const CString& strWhere);
 
     static CString FormatQuerySQLByTime(const CString& strTableName,
                                         const CString& strFieldList,
@@ -237,6 +247,7 @@ Q_SIGNALS:
     void documentDataModified(const WIZDOCUMENTDATA& document);
     void documentAbstractModified(const WIZDOCUMENTDATA& document);
     void documentTagModified(const WIZDOCUMENTDATA& document);
+    void documentReadCountChanged(const WIZDOCUMENTDATA& document);
 
     void groupDocumentUnreadCountModified(const QString& strKbGUID);
 
@@ -264,13 +275,13 @@ Q_SIGNALS:
 #define TABLE_NAME_WIZ_TAG  "WIZ_TAG"
 
 #define FIELD_LIST_WIZ_TAG  "\
-TAG_GUID, TAG_GROUP_GUID, TAG_NAME, TAG_DESCRIPTION, DT_MODIFIED, WIZ_VERSION"
+TAG_GUID, TAG_GROUP_GUID, TAG_NAME, TAG_DESCRIPTION, DT_MODIFIED, WIZ_VERSION, TAG_POS"
 
-#define PARAM_LIST_WIZ_TAG  "%s, %s, %s, %s, %s, %s"
+#define PARAM_LIST_WIZ_TAG  "%s, %s, %s, %s, %s, %s, %s"
 
 #define FIELD_LIST_WIZ_TAG_MODIFY "\
 TAG_GROUP_GUID=%s, TAG_NAME=%s, TAG_DESCRIPTION=%s, DT_MODIFIED=%s, \
-WIZ_VERSION=%s"
+WIZ_VERSION=%s, TAG_POS=%s"
 
 #define TABLE_KEY_WIZ_TAG   "TAG_GUID"
 
@@ -283,7 +294,8 @@ enum FieldIndex_WizTag
     tagTAG_NAME,
     tagTAG_DESCRIPTION,
     tagDT_MODIFIED,
-    tagVersion
+    tagVersion,
+    tagTAG_POS
 };
 
 /* ------------------------------ WIZ_STYLE ------------------------------ */
@@ -483,13 +495,13 @@ META_NAME=%s, META_KEY=%s, META_VALUE=%s, DT_MODIFIED=%s"
 
 #define FIELD_LIST_WIZ_MESSAGE "\
 MESSAGE_ID, BIZ_GUID, KB_GUID, DOCUMENT_GUID, SENDER, SENDER_ID, SENDER_GUID, \
-RECEIVER, RECEIVER_ID, RECEIVER_GUID, MESSAGE_TYPE, READ_STATUS, DT_CREATED, \
-MESSAGE_TITLE, MESSAGE_TEXT, WIZ_VERSION"
+RECEIVER, RECEIVER_ID, RECEIVER_GUID, MESSAGE_TYPE, READ_STATUS,\
+DT_CREATED, MESSAGE_TITLE, MESSAGE_TEXT, WIZ_VERSION, DELETE_STATUS, LOCAL_CHANGED"
 
 #define PARAM_LIST_WIZ_MESSAGE "\
-%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %d, %s, %s, %s, %s"
+%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %d, %d,%s, %s, %s, %s, %d, %d"
 
-#define FIELD_LIST_WIZ_MESSAGE_MODIFY "READ_STATUS=%d, WIZ_VERSION=%s"
+#define FIELD_LIST_WIZ_MESSAGE_MODIFY "READ_STATUS=%d, DELETE_STATUS=%d, WIZ_VERSION=%s, LOCAL_CHANGED=%d"
 #define TABLE_KEY_WIZ_MESSAGE   "MESSAGE_ID"
 
 enum FieldIndex_WizMessage
@@ -509,9 +521,10 @@ enum FieldIndex_WizMessage
     msgDT_CREATED,
     msgMESSAGE_TITLE,
     msgMESSAGE_TEXT,
-    msgWIZ_VERSION
+    msgWIZ_VERSION,
+    msgDELETE_STATUS,
+    msgLOCAL_CHANGED
 };
-
 
 /* ------------------------------ WIZ_USER ------------------------------ */
 #define TABLE_NAME_WIZ_USER "WIZ_USER"
@@ -521,7 +534,7 @@ BIZ_GUID, USER_ID, USER_GUID, USER_ALIAS, USER_PINYIN"
 
 #define PARAM_LIST_WIZ_USER "%s, %s, %s, %s, %s"
 
-#define FIELD_LIST_WIZ_USER_MODIFY "USER_ALIAS=%s, USER_PINYIN=%s"
+#define FIELD_LIST_WIZ_USER_MODIFY "USER_ID=%s, USER_ALIAS=%s, USER_PINYIN=%s"
 
 enum FieldIndex_WizUser
 {

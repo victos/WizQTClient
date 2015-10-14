@@ -1,4 +1,6 @@
 #include "wizkmxmlrpc.h"
+#include "apientry.h"
+#include "token.h"
 
 #define WIZUSERMESSAGE_AT		0
 #define WIZUSERMESSAGE_EDIT		1
@@ -174,10 +176,6 @@ BOOL CWizKMAccountsServer::ShareSNS(const QString& strToken, const QString& strS
 {
     return document_shareSNS(strToken, strSNS, strComment, strURL, strDocumentGUID);
 }
-BOOL CWizKMAccountsServer::ShareGroup(const QString& strToken, const QString& strDocumentGUIDs, const QString& strGroups)
-{
-    return document_shareGroup(strToken, strDocumentGUIDs, strGroups);
-}
 
 BOOL CWizKMAccountsServer::GetGroupList(CWizGroupDataArray& arrayGroup)
 {
@@ -249,6 +247,17 @@ BOOL CWizKMAccountsServer::SetMessageReadStatus(const QString& strMessageIDs, in
     return TRUE;
 }
 
+bool CWizKMAccountsServer::SetMessageDeleteStatus(const QString& strMessageIDs, int nStatus)
+{
+    QString strUrl = WizService::CommonApiEntry::messageServerUrl();
+    strUrl += QString("/messages?token=%1&ids=%2").arg(m_retLogin.strToken).arg(strMessageIDs);
+    qDebug() << "set message delete status, strken:" << m_retLogin.strToken << "   ids : " << strMessageIDs << " url : " << strUrl;
+    //
+    deleteRequest(strUrl);
+
+    return returnCode() == JSON_RETURNCODE_OK;
+}
+
 BOOL CWizKMAccountsServer::GetValueVersion(const QString& strKey, __int64& nVersion)
 {
     return CWizKMXmlRpcServerBase::GetValueVersion(_T("accounts"), GetToken(), GetKbGUID(), strKey, nVersion);
@@ -284,7 +293,7 @@ BOOL CWizKMAccountsServer::accounts_clientLogin(const QString& strUserName, cons
     param.AddString(_T("user_id"), strUserName);
     param.AddString(_T("password"), MakeXmlRpcPassword(strPassword));
     param.AddString(_T("program_type"), strType);
-    param.AddString(_T("protocol"), "https");
+//    param.AddString(_T("protocol"), "https");
     //
     if (!Call(_T("accounts.clientLogin"), ret, &param))
     {
@@ -458,23 +467,6 @@ BOOL CWizKMAccountsServer::document_shareSNS(const QString& strToken, const QStr
     return TRUE;
 }
 
-BOOL CWizKMAccountsServer::document_shareGroup(const QString& strToken, const QString& strDocumentGUIDs, const QString& strGroups)
-{
-    CWizKMTokenOnlyParam param(strToken, GetKbGUID());
-    param.AddString(_T("document_guids"), strDocumentGUIDs);
-    param.AddString(_T("groups"), strGroups);
-    //
-    CWizXmlRpcResult callRet;
-    if (!Call(_T("document.shareGroup"), callRet, &param))
-    {
-        TOLOG(_T("share note to groups failed!"));
-        return FALSE;
-    }
-    //
-    return TRUE;
-}
-
-
 
 BOOL CWizKMAccountsServer::accounts_getGroupList(CWizGroupDataArray& arrayGroup)
 {
@@ -485,7 +477,7 @@ BOOL CWizKMAccountsServer::accounts_getGroupList(CWizGroupDataArray& arrayGroup)
     }
     //
     param.AddString(_T("kb_type"), _T("group"));
-    param.AddString(_T("protocol"), "https");
+//    param.AddString(_T("protocol"), "https");
     //
     std::deque<WIZGROUPDATA> arrayWrap;
     if (!Call(_T("accounts.getGroupKbList"), arrayWrap, &param))
@@ -1294,51 +1286,17 @@ BOOL CWizKMDatabaseServer::attachment_postData(WIZDOCUMENTATTACHMENTDATAEX& data
 
 
 
-BOOL CWizKMDatabaseServer::document_downloadList(const CWizStdStringArray& arrayDocumentGUID, std::deque<WIZDOCUMENTDATAEX>& arrayRet)
+BOOL CWizKMDatabaseServer::document_downloadSimpleList(const CWizStdStringArray& arrayDocumentGUID, std::deque<WIZDOCUMENTDATAEX>& arrayRet)
 {
     return downloadList<WIZDOCUMENTDATAEX, WIZDOCUMENTDATAEX_XMLRPC_SIMPLE>(_T("document.downloadList"), _T("document_guids"), arrayDocumentGUID, arrayRet);
 }
 
 BOOL CWizKMDatabaseServer::document_downloadFullList(const CWizStdStringArray& arrayDocumentGUID, std::deque<WIZDOCUMENTDATAEX>& arrayRet)
 {
-    return downloadList<WIZDOCUMENTDATAEX, WIZDOCUMENTDATAEX_XMLRPC_FULL>(_T("document.downloadInfoList"), _T("document_guids"), arrayDocumentGUID, arrayRet);
+   return downloadList<WIZDOCUMENTDATAEX, WIZDOCUMENTDATAEX_XMLRPC_FULL>(_T("document.downloadInfoList"), _T("document_guids"), arrayDocumentGUID, arrayRet);
 }
 
-BOOL CWizKMDatabaseServer::document_downloadFullListEx(const CWizStdStringArray& arrayDocumentGUID, std::deque<WIZDOCUMENTDATAEX>& arrayRet)
-{
-    int nCountPerPage = 30;
-    //
-    CWizStdStringArray::const_iterator it = arrayDocumentGUID.begin();
-    //
-    while (1)
-    {
-        //
-        CWizStdStringArray subArray;
-        //
-        for (;
-            it != arrayDocumentGUID.end(); )
-        {
-            subArray.push_back(*it);
-            it++;
-            //
-            if (subArray.size() == nCountPerPage)
-                break;
-        }
-        //
-        std::deque<WIZDOCUMENTDATAEX> subRet;
-        if (!document_downloadFullList(subArray, subRet))
-            return FALSE;
-        //
-        arrayRet.insert(arrayRet.end(), subRet.begin(), subRet.end());
-        //
-        if (it == arrayDocumentGUID.end())
-            break;
-    }
-    //
-    return TRUE;
-}
-
-BOOL CWizKMDatabaseServer::attachment_downloadList(const CWizStdStringArray& arrayAttachmentGUID, std::deque<WIZDOCUMENTATTACHMENTDATAEX>& arrayRet)
+BOOL CWizKMDatabaseServer::attachment_downloadSimpleList(const CWizStdStringArray& arrayAttachmentGUID, std::deque<WIZDOCUMENTATTACHMENTDATAEX>& arrayRet)
 {
     return downloadList<WIZDOCUMENTATTACHMENTDATAEX, WIZDOCUMENTATTACHMENTDATAEX>(_T("attachment.downloadList"), _T("attachment_guids"), arrayAttachmentGUID, arrayRet);
 }

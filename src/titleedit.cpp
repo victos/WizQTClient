@@ -11,6 +11,7 @@
 #include "wizDocumentView.h"
 #include "wizmainwindow.h"
 #include "wizDocumentWebView.h"
+#include "wizDocumentWebEngine.h"
 
 using namespace Core;
 using namespace Core::Internal;
@@ -30,28 +31,13 @@ TitleEdit::TitleEdit(QWidget *parent)
 
     connect(this, SIGNAL(returnPressed()), SLOT(onTitleReturnPressed()));
     connect(this, SIGNAL(editingFinished()), SLOT(onTitleEditingFinished()));
+    connect(this, SIGNAL(textEdited(QString)), SLOT(onTextEdit(QString)));
+    connect(this, SIGNAL(textChanged(QString)), SLOT(onTextChanged(QString)));
 }
 
 QSize TitleEdit::sizeHint() const
 {
     return QSize(fontMetrics().width(text()), fontMetrics().height() + 10);
-}
-
-void TitleEdit::inputMethodEvent(QInputMethodEvent* event)
-{
-    // FIXME: This should be a QT bug
-    // when use input method, input as normal is fine, but input as selection text
-    // will lose blink cursor, we should reset cursor position first!!!
-//    if (hasSelectedText()) {
-//        del();
-//    }
-
-    QLineEdit::inputMethodEvent(event);
-
-    //QString strCompPrefix = textUnderCursor();
-    //if (strCompPrefix != c->completionPrefix()) {
-    //    updateCompleterPopupItems(strCompPrefix);
-    //}
 }
 
 void TitleEdit::keyPressEvent(QKeyEvent* e)
@@ -73,38 +59,40 @@ void TitleEdit::keyPressEvent(QKeyEvent* e)
 
     QLineEdit::keyPressEvent(e);
 
-    if (!c)
-        return;
+    // NOTE:目前不在keypress的时候处理提示的问题，原因是中文输入法不会触发keypress事件，
+    //改为在textedit事件中处理
+//    if (!c)
+//        return;
 
-    QString completionPrefix = textUnderCursor();
-    bool isSeparator = (!completionPrefix.isEmpty() || charBeforeCursor() == m_separator) ? true : false;
+//    QString completionPrefix = textUnderCursor();
+//    bool isSeparator = (!completionPrefix.isEmpty() || charBeforeCursor() == m_separator) ? true : false;
 
-    if (!isSeparator) {
-        c->popup()->hide();
-        return;
-    }
+//    if (!isSeparator) {
+//        c->popup()->hide();
+//        return;
+//    }
 
-    const bool ctrlOrShift = e->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier);
-    if (!c || (ctrlOrShift && e->text().isEmpty()))
-        return;
+//    const bool ctrlOrShift = e->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier);
+//    if (!c || (ctrlOrShift && e->text().isEmpty()))
+//        return;
 
-    static QString eow("~!#$%^&*()_+{}|:\"<>?,./;'[]\\-="); // end of word
-    bool hasModifier = isSeparator && !ctrlOrShift;
+//    static QString eow("~!#$%^&*()_+{}|:\"<>?,./;'[]\\-="); // end of word
+//    bool hasModifier = isSeparator && !ctrlOrShift;
 
-    if (!isSeparator && (hasModifier || e->text().isEmpty()
-                      || eow.contains(e->text().right(1)))) {
-        c->popup()->hide();
-        return;
-    }
+//    if (!isSeparator && (hasModifier || e->text().isEmpty()
+//                      || eow.contains(e->text().right(1)))) {
+//        c->popup()->hide();
+//        return;
+//    }
 
-    if (completionPrefix != c->completionPrefix()) {
-        updateCompleterPopupItems(completionPrefix);
-    }
+//    if (completionPrefix != c->completionPrefix()) {
+//        updateCompleterPopupItems(completionPrefix);
+//    }
 
-    QRect cr = cursorRect();
-    cr.setWidth(c->popup()->sizeHintForColumn(0)
-                + c->popup()->verticalScrollBar()->sizeHint().width() + 20); // bigger
-    c->complete(cr); // popup it up!
+//    QRect cr = cursorRect();
+//    cr.setWidth(c->popup()->sizeHintForColumn(0)
+//                + c->popup()->verticalScrollBar()->sizeHint().width() + 20); // bigger
+//    c->complete(cr); // popup it up!
 }
 
 
@@ -179,8 +167,8 @@ void TitleEdit::setReadOnly(bool b)
     setAttribute(Qt::WA_MacShowFocusRect, false);
 
     // Focre to update document title right now
-    if (b)
-        onTitleEditingFinished();
+//    if (b)
+//        onTitleEditingFinished();
 }
 
 void TitleEdit::setCompleter(QCompleter* completer)
@@ -214,10 +202,20 @@ void TitleEdit::onInsertCompletion(const QModelIndex& index)
 
 void TitleEdit::onTitleEditingFinished()
 {
+    setCursorPosition(0);
+    //
     WIZDOCUMENTDATA data;
     CWizDatabase& db = CWizDatabaseManager::instance()->db(noteView()->note().strKbGUID);
     if (db.DocumentFromGUID(noteView()->note().strGUID, data)) {
+        if (!db.CanEditDocument(data))
+            return;
+
         QString strNewTitle = text().left(255);
+        if (strNewTitle.isEmpty() && !placeholderText().isEmpty()) {
+            strNewTitle = placeholderText().left(255);
+        }
+        strNewTitle.replace("\n", " ");
+        strNewTitle.replace("\r", " ");
         if (strNewTitle != data.strTitle) {
             data.strTitle = strNewTitle;
             db.ModifyDocumentInfo(data);
@@ -227,9 +225,56 @@ void TitleEdit::onTitleEditingFinished()
     }
 }
 
+void TitleEdit::setText(const QString& text)
+{
+    QLineEdit::setText(text);
+    setCursorPosition(0);
+}
+
 void TitleEdit::onTitleReturnPressed()
 {
     noteView()->setEditorFocus();
     noteView()->web()->setFocus(Qt::MouseFocusReason);
     noteView()->web()->editorFocus();
+}
+
+void TitleEdit::onTextEdit(const QString& text)
+{
+    if (!c)
+        return;
+
+    QString completionPrefix = textUnderCursor();
+    bool isSeparator = (!completionPrefix.isEmpty() || charBeforeCursor() == m_separator) ? true : false;
+
+    if (!isSeparator) {
+        c->popup()->hide();
+        return;
+    }
+
+
+    static QString eow("~!#$%^&*()_+{}|:\"<>?,./;'[]\\-="); // end of word
+
+    if (!isSeparator && (text.isEmpty()
+                      || eow.contains(text.right(1)))) {
+        c->popup()->hide();
+        return;
+    }
+
+    if (completionPrefix != c->completionPrefix()) {
+        updateCompleterPopupItems(completionPrefix);
+    }
+
+    QRect cr = cursorRect();
+    cr.setWidth(c->popup()->sizeHintForColumn(0)
+                + c->popup()->verticalScrollBar()->sizeHint().width() + 20); // bigger
+    c->complete(cr); // popup it up!
+}
+
+void TitleEdit::onTextChanged(const QString& text)
+{
+    if (text.isEmpty()) {
+        setStyleSheet("QLineEdit{color:#666666;}");
+    } else {
+        setStyleSheet("QLineEdit{color:black;}");
+    }
 }

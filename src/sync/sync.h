@@ -5,7 +5,10 @@
 
 bool WizSyncDatabase(const WIZUSERINFO& info,
                      IWizKMSyncEvents* pEvents,
-                     IWizSyncableDatabase* pDatabase,
-                     bool bUseWizServer, bool bBackground);
+                     IWizSyncableDatabase* pDatabase, bool bBackground);
+
+bool WizQuickDownloadMessage(const WIZUSERINFO& info,
+                             IWizKMSyncEvents* pEvents,
+                             IWizSyncableDatabase* pDatabase);
 
 #endif // WIZSERVICE_SYNC_H

@@ -11,7 +11,7 @@
 #include <QEventLoop>
 
 #include <rapidjson/document.h>
-
+#include "share/wizEventLoop.h"
 #include "apientry.h"
 #include "wizkmxmlrpc.h"
 #include "token.h"
@@ -36,7 +36,7 @@ void AsyncApi::login(const QString& strUserId, const QString& strPasswd)
 
 bool AsyncApi::login_impl(const QString& strUserId, const QString& strPasswd)
 {
-    CWizKMAccountsServer asServer(ApiEntry::syncUrl());
+    CWizKMAccountsServer asServer(CommonApiEntry::syncUrl());
     bool ret = asServer.Login(strUserId, strPasswd);
     if (!ret) {
         m_nErrorCode = asServer.GetLastErrorCode();
@@ -56,7 +56,7 @@ bool AsyncApi::getToken_impl(const QString& strUserId, const QString& strPasswd)
 {
     QString strToken;
 
-    CWizKMAccountsServer asServer(ApiEntry::syncUrl());
+    CWizKMAccountsServer asServer(CommonApiEntry::syncUrl());
     bool ret = asServer.GetToken(strUserId, strPasswd, strToken);
     if (!ret) {
         m_nErrorCode = asServer.GetLastErrorCode();
@@ -74,7 +74,7 @@ void AsyncApi::keepAlive(const QString& strToken, const QString& strKbGUID)
 
 bool AsyncApi::keepAlive_impl(const QString& strToken, const QString& strKbGUID)
 {
-    CWizKMAccountsServer asServer(ApiEntry::syncUrl());
+    CWizKMAccountsServer asServer(CommonApiEntry::syncUrl());
 
     WIZUSERINFO info;
     info.strToken = strToken;
@@ -100,7 +100,7 @@ void AsyncApi::registerAccount(const QString& strUserId, const QString& strPassw
 bool AsyncApi::registerAccount_impl(const QString& strUserId, const QString& strPasswd,
                                     const QString& strInviteCode, const QString& strCaptchaID, const QString& strCaptcha)
 {
-    CWizKMAccountsServer aServer(ApiEntry::syncUrl());
+    CWizKMAccountsServer aServer(CommonApiEntry::syncUrl());
 
     bool ret = aServer.CreateAccount(strUserId, strPasswd, strInviteCode, strCaptchaID, strCaptcha);
     if (!ret) {
@@ -123,8 +123,11 @@ bool AsyncApi::registerAccount_impl(const QString& strUserId, const QString& str
 void AsyncApi::getCommentsCount(const QString& strUrl)
 {
     QNetworkReply* reply = m_networkManager->get(QNetworkRequest(strUrl));
-
+    
+    QEventLoop loop;
+    connect(reply, SIGNAL(finished()), &loop, SLOT(quit()));
     connect(reply, SIGNAL(finished()), this, SLOT(on_comments_finished()));
+    loop.exec();
 }
 
 void AsyncApi::on_comments_finished()
@@ -172,29 +175,69 @@ void AsyncApi::on_comments_finished()
 }
 
 
-void AsyncApi::setMessageStatus(const QString& ids, bool bRead)
+void AsyncApi::setMessageReadStatus(const QString& ids, bool bRead)
 {
-    QtConcurrent::run(this, &AsyncApi::setMessageStatus_impl, ids, bRead);
+    QtConcurrent::run(this, &AsyncApi::setMessageReadStatus_impl, ids, bRead);
 }
 
-void AsyncApi::setMessageStatus_impl(const QString& ids, bool bRead)
+void AsyncApi::setMessageDeleteStatus(const QString& ids, bool bDelete)
+{
+    QtConcurrent::run(this, &AsyncApi::setMessageDeleteStatus_impl, ids, bDelete);
+}
+
+void AsyncApi::setMessageReadStatus_impl(const QString& ids, bool bRead)
 {
     QString strToken = Token::token();
-    qDebug() << "set message status, strken:" << strToken;
+    qDebug() << "set message read status, strken:" << strToken;
 
     if (strToken.isEmpty()) {
         return;
     }
 
-    CWizKMAccountsServer aServer(ApiEntry::syncUrl());
+    CWizKMAccountsServer aServer(CommonApiEntry::syncUrl());
 
     WIZUSERINFO info = Token::info();
     info.strToken = strToken;
     aServer.SetUserInfo(info);
 
     bool ret = aServer.SetMessageReadStatus(ids, bRead);
-    if (!ret) {
+    qDebug() << "set message read status : " << ret;
+    if (!ret)
+    {
         m_nErrorCode = aServer.GetLastErrorCode();
         m_strErrorMessage = aServer.GetLastErrorMessage();
     }
+    else
+    {
+        emit uploadMessageReadStatusFinished(ids);
+    }
+}
+
+void AsyncApi::setMessageDeleteStatus_impl(const QString& ids, bool bDelete)
+{
+    QString strToken = Token::token();
+    if (strToken.isEmpty()) {
+        return;
+    }
+
+    CWizKMAccountsServer aServer(CommonApiEntry::syncUrl());
+
+    WIZUSERINFO info = Token::info();
+    info.strToken = strToken;
+    aServer.SetUserInfo(info);
+
+    bool ret = aServer.SetMessageDeleteStatus(ids, bDelete);
+    if (ret)
+    {
+        qDebug() << "[MessageStatus]Upload message delete status OK";
+        emit uploadMessageDeleteStatusFinished(ids);
+    }
+    else
+    {
+        m_nErrorCode = aServer.GetLastErrorCode();
+        m_strErrorMessage = aServer.GetLastErrorMessage();
+        qDebug() << "[MessageStatus]Upload message delete status error :  " << m_nErrorCode << m_strErrorMessage;
+    }
+    //
+
 }

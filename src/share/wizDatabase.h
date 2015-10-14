@@ -27,22 +27,42 @@ public:
     bool isProtected() const { return m_data.nProtected; }
     bool encryptDocument() { return false; }
 
+    void makeSureObjectDataExists(CWizObjectDataDownloaderHost* downloader);
+
     QString GetAttachmentsPath(bool create);
     bool IsInDeletedItemsFolder();
-    bool MoveDocument(CWizFolder* pFolder);
+    bool MoveTo(CWizFolder* pFolder);
+    bool MoveTo(CWizDatabase& targetDB, CWizFolder* pFolder, CWizObjectDataDownloaderHost* downloader);
+    bool MoveTo(CWizDatabase& targetDB, const WIZTAGDATA& targetTag, CWizObjectDataDownloaderHost* downloader);
+    bool CopyTo(CWizDatabase& targetDB, CWizFolder* pFolder, bool keepDocTime,
+                bool keepDocTag, QString& newDocGUID, CWizObjectDataDownloaderHost* downloader);
+    bool CopyTo(CWizDatabase& targetDB, const WIZTAGDATA& targetTag, bool keepDocTime, CWizObjectDataDownloaderHost* downloader);
     bool AddTag(const WIZTAGDATA& dataTag);
     bool RemoveTag(const WIZTAGDATA& dataTag);
     QString GetMetaText();
 
-private:
-    CWizDatabase& m_db;
-    WIZDOCUMENTDATA m_data;
-
+    //
 public:
     Q_INVOKABLE void Delete();
     Q_INVOKABLE void PermanentlyDelete(void);
     Q_INVOKABLE void MoveTo(QObject* pFolder);
     Q_INVOKABLE bool UpdateDocument4(const QString& strHtml, const QString& strURL, int nFlags);
+    Q_INVOKABLE void deleteToTrash();   // would delete from server
+    Q_INVOKABLE void deleteFromTrash();   // delete local file
+
+
+
+private:
+    bool copyDocumentTo(const QString &sourceGUID, CWizDatabase &targetDB, const QString &strTargetLocation,
+                        const WIZTAGDATA &targetTag, QString &resultGUID,
+                        CWizObjectDataDownloaderHost *downloaderHost, bool keepDocTime);
+    bool copyDocumentAttachment(const WIZDOCUMENTDATA& sourceDoc, CWizDatabase& targetDB,
+                                WIZDOCUMENTDATA& targetDoc, CWizObjectDataDownloaderHost* downloaderHost);
+
+private:
+    CWizDatabase& m_db;
+    WIZDOCUMENTDATA m_data;
+
 };
 
 
@@ -91,7 +111,9 @@ class CWizDatabase
     Q_OBJECT
 
 private:
-    QString m_strUserId;
+    QString m_strAccountFolderName;
+    // all databases share one user id, user id data only stored in personal databases
+    static QString m_strUserId;
     QString m_strPassword;
     WIZDATABASEINFO m_info;
     QPointer<CWizZiwReader> m_ziwReader;
@@ -115,15 +137,21 @@ public:
     virtual bool SaveLastSyncTime();
     virtual COleDateTime GetLastSyncTime();
 
+    bool WizDayOnce(const QString& strName);
+
     // versions
     virtual qint64 GetObjectVersion(const QString& strObjectType);
     virtual bool SetObjectVersion(const QString& strObjectType, qint64 nVersion);
 
     virtual qint64 GetObjectLocalVersion(const QString& strObjectGUID,
                                          const QString& strObjectType);
+    virtual qint64 GetObjectLocalVersionEx(const QString& strObjectGUID,
+                                         const QString& strObjectType,
+                                           bool& bObjectVersion);
     virtual bool SetObjectLocalServerVersion(const QString& strObjectGUID,
                                              const QString& strObjectType,
                                              qint64 nVersion);
+    virtual void OnObjectUploaded(const QString &strObjectGUID, const QString &strObjectType);
 
     // query
     virtual bool GetModifiedDeletedList(CWizDeletedGUIDDataArray& arrayData);
@@ -131,6 +159,7 @@ public:
     virtual bool GetModifiedStyleList(CWizStyleDataArray& arrayData);
     virtual bool GetModifiedDocumentList(CWizDocumentDataArray& arrayData);
     virtual bool GetModifiedAttachmentList(CWizDocumentAttachmentDataArray& arrayData);
+    virtual bool GetModifiedMessageList(CWizMessageDataArray& arrayData);
     virtual bool GetObjectsNeedToBeDownloaded(CWizObjectDataArray& arrayObject);
 
     virtual bool DocumentFromGUID(const QString& strGUID,
@@ -170,18 +199,11 @@ public:
                                     UINT part);
 
     virtual bool OnUploadObject(const QString& strGUID,
-                                const QString& strObjectType);
+                                const QString& strObjectType);    
 
-    //copy Document
-    //create new doc and copy data, set the new doc time as the source doc.
-    virtual bool CopyDocumentTo(const QString& strGUID, CWizDatabase& targetDB,
-                                  const QString& strTargetLocation, const WIZTAGDATA &targetTag,
-                                QString& strResultGUID, CWizObjectDataDownloaderHost *downloaderHost);
-    //if file doesn't exist, download it.
-    bool makeSureDocumentExist(const WIZDOCUMENTDATA& doc, CWizObjectDataDownloaderHost* downloaderHost);
-    bool makeSureAttachmentExist(const WIZDOCUMENTATTACHMENTDATAEX& attachData,
-                                 CWizObjectDataDownloaderHost* downloaderHost);
-    bool tryAccessDocument(const WIZDOCUMENTDATA& doc);
+    // modify
+    virtual bool ModifyDocumentsVersion(CWizDocumentDataArray& arrayData);
+    virtual bool ModifyMessagesLocalChanged(CWizMessageDataArray &arrayData);    
 
     // info and groups
     virtual void SetUserInfo(const WIZUSERINFO& info);
@@ -193,6 +215,9 @@ public:
     virtual IWizSyncableDatabase* GetPersonalDatabase();
 
     virtual bool IsGroup();
+    virtual bool HasBiz();
+    bool IsVip();
+
     virtual bool IsGroupAdmin();
     virtual bool IsGroupSuper();
     virtual bool IsGroupEditor();
@@ -237,17 +262,21 @@ public:
     virtual bool ProcessValue(const QString& strKey);
 
     virtual void GetAllBizUserIds(CWizStdStringArray& arrayText);
+    virtual bool GetAllBizUsers(CWizBizUserDataArray& arrayUser);
 
     virtual void ClearLastSyncError();
+    virtual QString GetLastSyncErrorMessage();
     virtual void OnTrafficLimit(const QString& strErrorMessage);
     virtual void OnStorageLimit(const QString& strErrorMessage);
+    virtual void OnNoteCountLimit(const QString& strErrorMessage);
     virtual void OnBizServiceExpr(const QString& strBizGUID, const QString& strErrorMessage);
-    virtual void OnBizNoteCountLimit(const QString& strBizGUID, const QString& strErrorMessage);
     virtual bool IsTrafficLimit();
     virtual bool IsStorageLimit();
+    virtual bool IsNoteCountLimit();
     virtual bool IsBizServiceExpr(const QString& strBizGUID);
-    virtual bool IsBizNoteCountLimit(const QString& strBizGUID);
     virtual bool GetStorageLimitMessage(QString& strErrorMessage);
+    virtual bool GetTrafficLimitMessage(QString& strErrorMessage);
+    virtual bool GetNoteCountLimit(QString& strErrorMessage);
 
     virtual bool setMeta(const QString& strSection, const QString& strKey, const QString& strValue);
     virtual QString meta(const QString& strSection, const QString& strKey);
@@ -258,21 +287,30 @@ public:
     // helper methods for interface
     void SetObjectSyncTimeLine(int nDays);
     int GetObjectSyncTimeline();
+    void setDownloadAttachmentsAtSync(bool download);
+    bool getDownloadAttachmentsAtSync();
     QString GetFolders();
     QString GetFoldersPos();
+    QString GetGroupTagsPos();
     void SetFoldersPos(const QString& foldersPos, qint64 nVersion);
     void SetFolders(const QString& strFolders, qint64 nVersion, bool bSaveVersion);
+    void SetGroupTagsPos(const QString& tagsPos, qint64 nVersion);
+    QString GetFavorites();
+    void SetFavorites(const QString& favorites, qint64 nVersion);
 
     void SetBizUsers(const QString &strBizGUID, const QString& strUsers);
     bool loadBizUsersFromJson(const QString &strBizGUID,
                               const QString& strJsonRaw,
                               CWizBizUserDataArray& arrayUser);
 
+    void SetFoldersPosModified();
+    void SetGroupTagsPosModified();
+
     //
     virtual bool getAllNotesOwners(CWizStdStringArray &arrayOwners);
 
 public:
-    bool Open(const QString& strUserId, const QString& strKbGUID = NULL);
+    bool Open(const QString& strAccountFolderName, const QString& strKbGUID = NULL);
     bool LoadDatabaseInfo();
     bool SetDatabaseInfo(const WIZDATABASEINFO& dbInfo);
     bool InitDatabaseInfo(const WIZDATABASEINFO& dbInfo);
@@ -280,6 +318,7 @@ public:
 
     // path resolve
     QString GetAccountPath() const;
+    QString GetAccountFolderName() const;
 
     QString GetDataPath() const;
     QString GetIndexFileName() const;
@@ -290,6 +329,7 @@ public:
     QString GetAttachmentFileName(const QString& strGUID);
     QString GetAvatarPath() const;
     QString GetDefaultNoteLocation() const;
+    QString GetDocumentAuthorAlias(const WIZDOCUMENTDATA& doc);
     QString GetDocumentOwnerAlias(const WIZDOCUMENTDATA& doc);
 
     bool GetUserName(QString& strUserName);
@@ -347,8 +387,11 @@ public:
 
     virtual bool UpdateDocumentDataMD5(WIZDOCUMENTDATA& data, const CString& strZipFileName, bool notifyDataModify = true);
 
+    // delete
+    bool DeleteObject(const QString &strGUID, const QString &strType, bool bLog);
     bool DeleteTagWithChildren(const WIZTAGDATA& data, bool bLog);
-    bool DeleteAttachment(const WIZDOCUMENTATTACHMENTDATA& data, bool bLog, bool bReset);
+    bool DeleteAttachment(const WIZDOCUMENTATTACHMENTDATA& data, bool bLog,
+                          bool bResetDocInfo, bool updateAttachList = true);
 
     bool IsDocumentModified(const CString& strGUID);
     bool IsAttachmentModified(const CString& strGUID);
@@ -437,6 +480,9 @@ public:
     void setSaveUserCipher(bool b) { m_ziwReader->setSaveUserCipher(b); }
 
     //
+    bool tryAccessDocument(const WIZDOCUMENTDATA &doc);
+
+    //
     void CopyDocumentLink(const WIZDOCUMENTDATA& document);
     void CopyDocumentsLink(const QList<WIZDOCUMENTDATA>& documents);
     QString DocumentToWizKMURL(const WIZDOCUMENTDATA& document);
@@ -452,7 +498,7 @@ public:
 
 public slots:
     void onAttachmentModified(const QString strKbGUID, const QString& strGUID, const QString& strFileName,
-                              const QString& strMD5, const QDateTime& dtLastModified);
+                              const QString& strMD5, const QDateTime& dtLastModified);    
 
 Q_SIGNALS:
     void userInfoChanged();
@@ -466,16 +512,15 @@ Q_SIGNALS:
     void processLog(const QString& msg);
     void attachmentsUpdated();
     void folderPositionChanged();
+    void tagsPositionChanged(const QString& strKbGUID);
+    void documentUploaded(const QString& strKbGUID, const QString& strGUID);
+    void userIdChanged(const QString& oldId, const QString& newId);
+    void favoritesChanged(const QString& favorites);
 
 private:
     //should make sure sourceDoc already exist before use this.
     bool CopyDocumentData(const WIZDOCUMENTDATA& sourceDoc, CWizDatabase& targetDB, \
-                                WIZDOCUMENTDATA& targetDoc);
-    bool CopyDocumentAttachment(const WIZDOCUMENTDATA& sourceDoc, CWizDatabase& targetDB, \
-                                        WIZDOCUMENTDATA& targetDoc, CWizObjectDataDownloaderHost* downloaderHost);
-    bool CopyDocumentAttachment(const WIZDOCUMENTATTACHMENTDATAEX& sourceData, \
-                                const CWizDatabase& targetDB, WIZDOCUMENTATTACHMENTDATAEX& targetData, \
-                                QString& strFileName);
+                                WIZDOCUMENTDATA& targetDoc);    
 
     bool GetBizMetaName(const QString& strBizGUID, QString& strMetaName);
 

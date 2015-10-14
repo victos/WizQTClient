@@ -46,7 +46,7 @@ void CWizUpgrade::run()
 
 void CWizUpgrade::beginCheck()
 {
-    if (!QMetaObject::invokeMethod(this, "check")) {
+    if (!QMetaObject::invokeMethod(this, "checkUpgrade")) {
         TOLOG("Invoke check of upgrade failed");
     }
 
@@ -55,15 +55,15 @@ void CWizUpgrade::beginCheck()
 
 QString CWizUpgrade::getWhatsNewUrl()
 {
-    return WizService::ApiEntry::changeLogUrl();
+    return WizService::WizApiEntry::standardCommandUrl("changelog");
 }
 
-void CWizUpgrade::check()
+void CWizUpgrade::checkUpgrade()
 {
-    QString strApiUrl = WizService::ApiEntry::standardCommandUrl("download_server");
+    QString strApiUrl = WizService::WizApiEntry::standardCommandUrl("download_server");
 
     if (!m_net) {
-        m_net = new QNetworkAccessManager();
+        m_net = new QNetworkAccessManager(this);
     }
 
     QNetworkReply* reply = m_net->get(QNetworkRequest(strApiUrl));
@@ -127,14 +127,14 @@ void CWizUpgrade::on_checkUpgrade_finished()
         QDate dateLocal = fi.created().date();
 
         if (dateUpgrade > dateLocal) {
-            TOLOG("INFO: Upgrade is avaliable, version time:" + dateUpgrade.toString());
+            TOLOG(QObject::tr("INFO: Upgrade is avaliable, version time: %1").arg(dateUpgrade.toString()));
             Q_EMIT checkFinished(true);
         } else {
-            TOLOG("INFO: Local version is up to date");
+            TOLOG(QObject::tr("INFO: Local version is up to date"));
             Q_EMIT checkFinished(false);
         }
     } else {
-        TOLOG("ERROR: Check upgrade failed");
+        TOLOG(QObject::tr("ERROR: Check upgrade failed"));
         Q_EMIT checkFinished(false);
     }
 

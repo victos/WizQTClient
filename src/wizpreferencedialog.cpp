@@ -3,10 +3,14 @@
 
 #include <QMessageBox>
 #include <QFontDialog>
+#include <QColorDialog>
 
+#include "share/wizMessageBox.h"
 #include "share/wizDatabaseManager.h"
 #include "wizmainwindow.h"
 #include "wizproxydialog.h"
+#include "widgets/wizMarkdownTemplateDialog.h"
+#include "plugins/coreplugin/icore.h"
 
 
 CWizPreferenceWindow::CWizPreferenceWindow(CWizExplorerApp& app, QWidget* parent)
@@ -20,9 +24,6 @@ CWizPreferenceWindow::CWizPreferenceWindow(CWizExplorerApp& app, QWidget* parent
     setWindowTitle(tr("Preference"));
 
     connect(ui->btnClose, SIGNAL(clicked()), SLOT(accept()));
-
-    // FIXME: proxy settings will back soon!!!
-//    ui->labelProxySettings->hide();
 
     // general tab
     ::WizGetTranslatedLocales(m_locales);
@@ -143,9 +144,13 @@ CWizPreferenceWindow::CWizPreferenceWindow(CWizExplorerApp& app, QWidget* parent
             ui->comboSyncGroupMethod->setCurrentIndex(1);
     }
 
+    bool downloadAttachments = m_dbMgr.db().getDownloadAttachmentsAtSync();
+    ui->comboDownloadAttachments->setCurrentIndex(downloadAttachments ? 1 : 0);
+
     connect(ui->comboSyncInterval, SIGNAL(activated(int)), SLOT(on_comboSyncInterval_activated(int)));
     connect(ui->comboSyncMethod, SIGNAL(activated(int)), SLOT(on_comboSyncMethod_activated(int)));
     connect(ui->comboSyncGroupMethod, SIGNAL(activated(int)), SLOT(on_comboSyncGroupMethod_activated(int)));
+    connect(ui->comboDownloadAttachments, SIGNAL(activated(int)), SLOT(on_comboDownloadAttachments_activated(int)));
 
     QString proxySettings = WizFormatString1("<a href=\"proxy_settings\" style=\"color:#3CA2E0;\">%1</a>", tr("Proxy settings"));
     ui->labelProxySettings->setText(proxySettings);
@@ -166,6 +171,19 @@ CWizPreferenceWindow::CWizPreferenceWindow(CWizExplorerApp& app, QWidget* parent
     ui->spinBox_left->setValue(m_app.userSettings().printMarginValue(wizPositionLeft));
     ui->spinBox_right->setValue(m_app.userSettings().printMarginValue(wizPositionRight));
     ui->spinBox_top->setValue(m_app.userSettings().printMarginValue(wizPositionTop));
+
+    bool searchEncryptedNote = m_app.userSettings().searchEncryptedNote();
+    ui->checkBoxSearchEncryNote->setChecked(searchEncryptedNote);
+    ui->lineEditNotePassword->setEnabled(searchEncryptedNote);
+    ui->lineEditNotePassword->setText(m_app.userSettings().encryptedNotePassword());
+
+    QString strColor = m_app.userSettings().editorBackgroundColor();
+    ui->pushButtonBackgroundColor->setStyleSheet(QString("QPushButton "
+                                                         "{ border: 1px; background: %1; height:20px;  border-radius:5px } ").arg(strColor));
+    ui->pushButtonClearBackground->setStyleSheet(QString("QPushButton:pressed{background-color: #000000;"));
+
+    bool manuallySortFolders = m_app.userSettings().isManualSortingEnabled();
+    ui->checkBoxManuallySort->setChecked(manuallySortFolders);
 }
 
 void CWizPreferenceWindow::showPrintMarginPage()
@@ -330,14 +348,8 @@ void CWizPreferenceWindow::on_comboLang_currentIndexChanged(int index)
         userSettings().setLocale(strLocaleName);
     }
 
-    QMessageBox msgBox(this);
-    msgBox.setIcon(QMessageBox::Information);
-    msgBox.addButton(QMessageBox::Ok);
-    msgBox.setText(tr("Language will be changed after restart WizNote."));
-    msgBox.setWindowModality(Qt::ApplicationModal);
-    msgBox.exec();
 
-
+    CWizMessageBox::information(this, tr("Info"), tr("Language will be changed after restart WizNote."));
 }
 
 void CWizPreferenceWindow::on_checkBox_stateChanged(int arg1)
@@ -388,5 +400,98 @@ void CWizPreferenceWindow::on_checkBoxSystemStyle_toggled(bool checked)
 {
     m_app.userSettings().setUseSystemBasedStyle(checked);
 
-    QMessageBox::information(m_app.mainWindow(), tr("Info"), tr("Application style will be changed after restart WizNote."), QMessageBox::Ok);
+    CWizMessageBox::information(m_app.mainWindow(), tr("Info"), tr("Application style will be changed after restart WizNote."));
+}
+
+void CWizPreferenceWindow::on_checkBoxSearchEncryNote_toggled(bool checked)
+{
+    m_app.userSettings().setSearchEncryptedNote(checked);
+    if (!checked)
+    {
+        ui->lineEditNotePassword->blockSignals(true);
+        ui->lineEditNotePassword->clear();
+        ui->lineEditNotePassword->blockSignals(false);
+        m_app.userSettings().setEncryptedNotePassword("");
+
+//        QMessageBox msg;
+//        msg.setIcon(QMessageBox::Information);
+//        msg.setWindowTitle(tr("Cancel search encrypted note"));
+//        msg.addButton(QMessageBox::Ok);
+//        msg.addButton(QMessageBox::Cancel);
+//        msg.setText(tr("Cancel search encrypted note need to rebuild full text search, this would be quite slow if you have quite a few notes or attachments. "
+//                       "Do you want to rebuild full text search?"));
+
+        QMessageBox::StandardButton clickedButton = CWizMessageBox::warning(this, tr("Cancel search encrypted note"),
+                                                                                tr("Cancel search encrypted note need to rebuild full text search, this would be quite slow if you have quite a few notes or attachments. "
+                                                                                 "Do you want to rebuild full text search?") ,QMessageBox::Ok | QMessageBox::Cancel, QMessageBox::Ok);
+
+        if (QMessageBox::Ok == clickedButton)
+        {
+            Core::Internal::MainWindow* mainWindow = qobject_cast<Core::Internal::MainWindow*>(m_app.mainWindow());
+            Q_ASSERT(mainWindow);
+            mainWindow->rebuildFTS();
+        }
+    }
+    ui->lineEditNotePassword->setEnabled(checked);
+}
+
+void CWizPreferenceWindow::on_lineEditNotePassword_editingFinished()
+{
+    m_app.userSettings().setEncryptedNotePassword(ui->lineEditNotePassword->text());
+}
+
+void CWizPreferenceWindow::on_pushButtonBackgroundColor_clicked()
+{
+    QColorDialog dlg;
+    dlg.setCurrentColor(m_app.userSettings().editorBackgroundColor());
+    if (dlg.exec() == QDialog::Accepted)
+    {
+        QString strColor = dlg.currentColor().name();
+        updateEditorBackgroundColor(strColor);
+    }
+}
+
+void CWizPreferenceWindow::on_pushButtonClearBackground_clicked()
+{
+    updateEditorBackgroundColor("#FFFFFF");
+}
+
+void CWizPreferenceWindow::updateEditorBackgroundColor(const QString& strColorName)
+{
+    ui->pushButtonBackgroundColor->setStyleSheet(QString("QPushButton "
+                                                         "{ border: 1px; background: %1; height:20px;  border-radius:5px } ").arg(strColorName));
+    m_app.userSettings().setEditorBackgroundColor(strColorName);
+    Q_EMIT settingsChanged(wizoptionsFont);
+}
+
+void CWizPreferenceWindow::on_checkBoxManuallySort_toggled(bool checked)
+{
+    m_app.userSettings().setManualSortingEnable(checked);
+    emit settingsChanged(wizoptionsFolders);
+}
+
+void CWizPreferenceWindow::on_pushButtonChoseMarkdwonTemplate_clicked()
+{
+    CWizMarkdownTemplateDialog dlg;
+    if (dlg.exec() == QDialog::Accepted)
+//        Core::ICore::instance()->emitMarkdownSettingChanged();
+        Q_EMIT settingsChanged(wizoptionsMarkdown);
+    return;
+}
+
+
+void CWizPreferenceWindow::on_comboDownloadAttachments_activated(int index)
+{
+    switch (index) {
+    case 0:
+        m_dbMgr.db().setDownloadAttachmentsAtSync(false);
+        break;
+    case 1:
+        m_dbMgr.db().setDownloadAttachmentsAtSync(true);
+        break;
+    default:
+        Q_ASSERT(0);
+    }
+
+    Q_EMIT settingsChanged(wizoptionsSync);
 }

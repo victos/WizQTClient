@@ -59,9 +59,11 @@ QString StyleHelper::themeName()
     return strTheme;
 }
 
-QString StyleHelper::skinResourceFileName(const QString& strName)
+QString StyleHelper::skinResourceFileName(const QString& strName, bool need2x)
 {
-    return ::WizGetSkinResourceFileName(themeName(), strName);
+    bool use2x = need2x && ::WizIsHighPixel();
+    return ::WizGetSkinResourceFileName(themeName(),
+                                        (use2x ? strName + "@2x" : strName));
 }
 
 QIcon StyleHelper::loadIcon(const QString& strName)
@@ -72,7 +74,7 @@ QIcon StyleHelper::loadIcon(const QString& strName)
     QString strIconActive2 = ::WizGetSkinResourceFileName(strThemeName, strName+ "_selected");
 
     if (!QFile::exists(strIconNormal)) {
-        qDebug() << "load icon failed, filePath:" << strIconNormal;
+        qWarning() << "load icon failed, filePath:" << strIconNormal;
         return QIcon();
     }
 
@@ -244,6 +246,34 @@ void StyleHelper::drawTreeViewBadge(QPainter* p, const QRect& rc, const QString&
     p->drawText(rcd, Qt::AlignCenter, str);
 
     p->restore();
+}
+
+void StyleHelper::drawPixmapWithScreenScaleFactor(QPainter* p, const QRect& rcOrign, const QPixmap& pix)
+{
+    if (pix.isNull())
+        return;
+
+#ifdef Q_OS_MAC
+    float factor = qt_mac_get_scalefactor(0);
+    QRect rcTarget(rcOrign);
+    rcTarget.setWidth(rcTarget.width() * factor);
+    rcTarget.setHeight(rcTarget.height() * factor);
+    QTransform transRect;
+    transRect.scale(factor, factor);
+    QPoint leftTop = transRect.map(rcOrign.topLeft());
+    rcTarget.moveTopLeft(leftTop);
+    //
+    float rFactor = 1 / factor;
+    QTransform transPainter;
+    transPainter.scale(rFactor, rFactor);    
+    //
+    p->save();
+    p->setWorldTransform(transPainter);
+    p->drawPixmap(rcTarget, pix);
+    p->restore();
+#else
+    p->drawPixmap(rcOrign, pix);
+#endif
 }
 
 int StyleHelper::listViewSortControlWidgetHeight()
@@ -449,26 +479,32 @@ void StyleHelper::drawListViewItemSeperator(QPainter* p, const QRect& rc, ListVi
     p->restore();
 }
 
-QSize StyleHelper::avatarSize()
+QSize StyleHelper::avatarSize(bool bNoScreenFactor)
 {
-    return QSize(avatarHeight(), avatarHeight());
+    int nHeight = avatarHeight(bNoScreenFactor);
+    return QSize(nHeight, nHeight);
 }
 
-int StyleHelper::avatarHeight()
+int StyleHelper::avatarHeight(bool bNoScreenFactor)
 {
     QFont f;
-    return fontHead(f) + fontNormal(f) + margin() * 3;
+    int nHeight = fontHead(f) + fontNormal(f) + margin() * 3 ;
+    if (bNoScreenFactor)
+        return nHeight;
+
+#ifdef Q_OS_LINUX
+    return nHeight;
+#else
+    float factor = qt_mac_get_scalefactor(0); 
+    return nHeight * factor;
+#endif
 }
 
 QRect StyleHelper::drawAvatar(QPainter* p, const QRect& rc, const QPixmap& pm)
 {
     QRect rectAvatar = rc;
-    rectAvatar.setSize(avatarSize());
-
-    p->save();
-    p->setRenderHint(QPainter::Antialiasing);
-    p->drawPixmap(rectAvatar, pm);
-    p->restore();
+    rectAvatar.setSize(avatarSize(true));
+    drawPixmapWithScreenScaleFactor(p, rectAvatar, pm);    
 
     return rectAvatar;
 }
@@ -546,7 +582,7 @@ QRect StyleHelper::drawText(QPainter* p, const QRect& rc, QString& str, int nLin
             nWidth = qMax<int>(p->fontMetrics().width(lineText), nWidth);
         } else {
             lineText = str.left(line.textLength());
-            nWidth = qMax<int>(line.width(), nWidth);
+            nWidth = qMax<int>(p->fontMetrics().width(lineText), nWidth);
         }
 
         str.remove(0, line.textLength());
@@ -646,20 +682,34 @@ int StyleHelper::thumbnailHeight()
     return fontHead(f) + fontNormal(f) * 3 + margin() * 5;
 }
 
-QPolygon StyleHelper::bubbleFromSize(const QSize& sz, int nAngle, bool bAlignLeft)
+QPolygonF StyleHelper::bubbleFromSize(const QSize& sz, int nAngle, bool bAlignLeft)
 {
     Q_ASSERT(sz.width() > 31);
     Q_ASSERT(sz.height() > 11);
 
-    QVector<QPoint> ps;
+    float nBottomCorner = WizIsHighPixel() ? 2 : 1.5;
+
+    QVector<QPointF> ps;
     if (bAlignLeft) {
-        ps.push_back(QPoint(0, nAngle));
-        ps.push_back(QPoint(11, nAngle));
-        ps.push_back(QPoint(11 + nAngle, 0));
-        ps.push_back(QPoint(11 + nAngle * 2, nAngle));
-        ps.push_back(QPoint(sz.width(), nAngle));
-        ps.push_back(QPoint(sz.width(), sz.height()));
-        ps.push_back(QPoint(0, sz.height()));
+        ps.push_back(QPointF(0, 2.5 + nAngle));
+        ps.push_back(QPointF(1, 1 + nAngle));
+        ps.push_back(QPointF(2.5, nAngle));
+        ps.push_back(QPointF(11, nAngle));
+        ps.push_back(QPointF(11 + nAngle, 0));
+        ps.push_back(QPointF(11 + nAngle * 2, nAngle));
+        ps.push_back(QPointF(sz.width() - 2, nAngle));
+        ps.push_back(QPointF(sz.width() - 0.6, nAngle + 0.6));
+        ps.push_back(QPointF(sz.width(), nAngle + 2));
+        ps.push_back(QPointF(sz.width(), sz.height() - nBottomCorner));
+        if (WizIsHighPixel())
+        {
+            ps.push_back(QPointF(sz.width() - 0.6, sz.height() - 0.6));
+        }
+        ps.push_back(QPointF(sz.width() - nBottomCorner, sz.height()));
+        ps.push_back(QPointF(nBottomCorner, sz.height()));
+        ps.push_back(QPointF(0.6, sz.height() - 0.6));
+        ps.push_back(QPointF(0, sz.height() - nBottomCorner));
+        ps.push_back(QPointF(0, 2.5 + nAngle));
     } else {
         ps.push_back(QPoint(1, 10));
         ps.push_back(QPoint(sz.width() - 11 - nAngle * 2, nAngle));
@@ -672,7 +722,7 @@ QPolygon StyleHelper::bubbleFromSize(const QSize& sz, int nAngle, bool bAlignLef
         ps.push_back(QPoint(0, nAngle + 1));
     }
 
-    return QPolygon(ps);
+    return QPolygonF(ps);
 }
 
 int StyleHelper::fontHead(QFont& f)
@@ -734,6 +784,16 @@ int StyleHelper::editToolBarHeight()
     return 30;
 }
 
+int StyleHelper::infoBarHeight()
+{
+    return 32;
+}
+
+int StyleHelper::tagBarHeight()
+{
+    return editToolBarHeight();
+}
+
 int StyleHelper::notifyBarHeight()
 {
     return 32;
@@ -781,14 +841,14 @@ void StyleHelper::drawListViewItemThumb(QPainter* p, const QRect& rc, int nBadge
     QFont fontThumb;
     nFontHeight = Utils::StyleHelper::fontNormal(fontThumb);
 
-    QRect rcLead;
+    QRect rcLead;   //排序类型或标签等
     if (!lead.isEmpty()) {
         QString strInfo(lead);
         QColor colorDate = Utils::StyleHelper::listViewItemLead(bSelected, bFocused);
         rcLead = Utils::StyleHelper::drawText(p, rcd, strInfo, 1, Qt::AlignVCenter, colorDate, fontThumb);
     }
 
-    if (!abs.isEmpty()) {
+    if (!abs.isEmpty()) {          //  笔记内容
         QString strText(abs);
         QRect rcLine1(rcd.adjusted(rcLead.width(), 0, 0, 0));
         QColor colorSummary = Utils::StyleHelper::listViewItemSummary(bSelected, bFocused);

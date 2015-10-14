@@ -7,7 +7,7 @@ class QPainter;
 class QPixmap;
 class QColor;
 class QString;
-class QPolygon;
+class QPolygonF;
 class QFont;
 class QIcon;
 class CWizSettings;
@@ -50,7 +50,7 @@ public:
 
 
     static QString themeName();
-    static QString skinResourceFileName(const QString& strName);
+    static QString skinResourceFileName(const QString& strName, bool need2x = false);
     static QIcon loadIcon(const QString& strName);
 
     static int treeViewItemHeight();
@@ -68,6 +68,8 @@ public:
     static void drawTreeViewItemBackground(QPainter* p, const QRect& rc, bool bFocused);
     static void drawTreeViewItemIcon(QPainter* p, const QRect& rc, const QIcon& icn, bool bSelected);
     static void drawTreeViewBadge(QPainter* p, const QRect& rc, const QString& str);
+
+    static void drawPixmapWithScreenScaleFactor(QPainter* p, const QRect& rcOrign, const QPixmap& pix);
 
     static int listViewSortControlWidgetHeight();
 
@@ -89,7 +91,7 @@ public:
     //static void drawListViewItem(QPainter* p, const QRect& rc);
 
     static QIcon listViewBadge(int type);
-    static QPolygon bubbleFromSize(const QSize& sz, int nAngle = 10, bool bAlignLeft = true);
+    static QPolygonF bubbleFromSize(const QSize& sz, int nAngle = 10, bool bAlignLeft = true);
     static QRect drawText(QPainter* p, const QRect& rc, QString& str, int nLines,
                         int nFlags, const QColor& color, const QFont& font, bool bElided = true);
     static int drawSingleLineText(QPainter* p, const QRect& rc, QString& str, int nFlags, const QColor& color, const QFont& font);
@@ -102,8 +104,8 @@ public:
     static QRect drawBadgeIcon(QPainter* p, const QRect& rc, int height, int type, bool bFocus, bool bSelect);
     static QRect drawAttachIcon(QPainter* p, const QRect& rc, bool bFocus, bool bSelect);
 
-    static int avatarHeight();
-    static QSize avatarSize();
+    static int avatarHeight(bool bNoScreenFactor = false);
+    static QSize avatarSize(bool bNoScreenFactor = false);
     static QRect drawAvatar(QPainter* p, const QRect& rc, const QPixmap& pm);
 
     static int fontHead(QFont& f);
@@ -112,7 +114,8 @@ public:
 
     static int titleEditorHeight();
     static int editToolBarHeight();
-
+    static int infoBarHeight();
+    static int tagBarHeight();
     //
     static int notifyBarHeight();
 

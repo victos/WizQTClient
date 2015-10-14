@@ -32,11 +32,11 @@ QString TokenPrivate::token()
     QMutexLocker locker(m_mutex);
     Q_UNUSED(locker);
     //
-    Q_ASSERT(!m_strUserId.isEmpty() && !m_strPasswd.isEmpty());
+//    Q_ASSERT(!m_strUserId.isEmpty() && !m_strPasswd.isEmpty());
 
-    CWizKMAccountsServer asServer(ApiEntry::syncUrl());
     if (m_info.strToken.isEmpty())
     {
+        CWizKMAccountsServer asServer(CommonApiEntry::syncUrl());
         if (asServer.Login(m_strUserId, m_strPasswd))
         {
             m_info = asServer.GetUserInfo();
@@ -60,6 +60,7 @@ QString TokenPrivate::token()
         WIZUSERINFO info;
         info.strToken = m_info.strToken;
         info.strKbGUID = m_info.strKbGUID;
+        CWizKMAccountsServer asServer(CommonApiEntry::syncUrl());
         asServer.SetUserInfo(info);
 
         if (asServer.KeepAlive(m_info.strToken))

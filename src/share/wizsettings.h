@@ -15,6 +15,14 @@ enum WizProxyType
     WizProxy_Socks5Proxy,
 };
 
+
+enum WizServerType
+{
+    NoServer = 0,
+    WizServer = 99,
+    EnterpriseServer = 199
+};
+
 class CWizSettings : public QSettings
 {
 public:
@@ -68,7 +76,9 @@ enum WizOptionsType
     wizoptionsNoteView,
     wizoptionsSync,
     wizoptionsSkin,
-    wizoptionsFont
+    wizoptionsFont,
+    wizoptionsFolders,
+    wizoptionsMarkdown
 };
 
 enum WizPositionType
@@ -86,13 +96,13 @@ class CWizUserSettings
 public:
 
     // m_db should always 0 if init as this way.
-    CWizUserSettings(const QString& strUserId);
+    CWizUserSettings(const QString& strAccountFolderName);
 
     // m_strUserId should always 0 if init as this way.
     CWizUserSettings(CWizDatabase& db);
 
 private:
-    QString m_strUserId;
+    QString m_strAccountFolderName;
     QString m_strSkinName;
     QString m_strLocale;
     CWizDatabase* m_db;
@@ -104,11 +114,24 @@ public:
     QString get(const QString& section, const QString& strKey) const;
     void set(const QString& section, const QString& strKey, const QString& strValue);
 
-    QString user() const { return m_strUserId; }
-    void setUser(const QString& strUser);
+    QString userId() const;
+    void setUserId(const QString& strUserId);
+
+    void setAccountFolderName(const QString& strAccountFolderName);
+
+    QString myWizMail() const;
 
     QString password() const;
     void setPassword(const QString& strPassword = "");
+
+    WizServerType serverType() const;
+    void setServerType(WizServerType server = NoServer);
+
+    QString enterpriseServerIP ();
+    void setEnterpriseServerIP(const QString& strEnterpriseServerd = "");
+
+    QString serverLicence();
+    void setServerLicence(const QString& strLicence = "");
 
     bool autoLogin() const;
     void setAutoLogin(bool bAutoLogin);
@@ -136,6 +159,21 @@ public:
 
     bool needShowMobileFileReceiverUserGuide();
     void setNeedShowMobileFileReceiverUserGuide(bool bNeedShow);
+
+    bool searchEncryptedNote();
+    void setSearchEncryptedNote(bool bSearchEncryNote);
+
+    QString encryptedNotePassword();
+    void setEncryptedNotePassword(const QString& strPassword);
+
+    bool isRememberNotePasswordForSession();
+    void setRememberNotePasswordForSession(bool remember);
+
+    QString editorBackgroundColor();
+    void setEditorBackgroundColor(const QString& strColor);
+
+    bool isManualSortingEnabled();
+    void setManualSortingEnable(bool bEnable);
 
     QString locale();
     void setLocale(const QString& strLocale);

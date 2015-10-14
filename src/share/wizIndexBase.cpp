@@ -1,4 +1,5 @@
 #include "wizIndexBase.h"
+#include "wizdef.h"
 
 #include <QDebug>
 
@@ -30,6 +31,13 @@ bool CWizIndexBase::Open(const CString& strFileName)
 
     try {
         m_db.open(strFileName);
+        // upgrade table structure if table structure have been changed
+        if (m_db.tableExists(TABLE_NAME_WIZ_META)) {
+            int nVersion = getTableStructureVersion().toInt();
+            if (nVersion < QString(WIZ_TABLE_STRUCTURE_VERSION).toInt()) {
+                updateTableStructure(nVersion);
+            }
+        }
     } catch (const CppSQLite3Exception& e) {
         return LogSQLException(e, _T("open database"));
     }
@@ -38,6 +46,7 @@ bool CWizIndexBase::Open(const CString& strFileName)
         if (!CheckTable(g_arrayTableName[i]))
             return false;
     }
+    setTableStructureVersion(WIZ_TABLE_STRUCTURE_VERSION);
 
     return true;
 }
@@ -63,7 +72,8 @@ bool CWizIndexBase::CheckTable(const QString& strTableName)
     if (!WizLoadUnicodeTextFromFile(strFileName, strSQL))
         return false;
 
-    return ExecSQL(strSQL);
+    bool result = ExecSQL(strSQL);
+    return result;
 }
 
 bool CWizIndexBase::ExecSQL(const CString& strSQL)
@@ -127,6 +137,22 @@ bool CWizIndexBase::LogSQLException(const CppSQLite3Exception& e, const CString&
 bool CWizIndexBase::Repair(const QString& strDestFileName)
 {
     return CppSQLite3DB::repair(m_strFileName, strDestFileName) ? true : false;
+}
+
+bool CWizIndexBase::updateTableStructure(int oldVersion)
+{
+    qDebug() << "table structure version : " << oldVersion << "  update to version " << WIZ_TABLE_STRUCTURE_VERSION;
+    if (oldVersion < 1) {
+        Exec("ALTER TABLE 'WIZ_TAG' ADD 'TAG_POS' int64; ");
+    }
+    //
+    if (oldVersion < 2) {
+        Exec("ALTER TABLE 'WIZ_MESSAGE' ADD 'DELETE_STATUS' int;");
+        Exec("ALTER TABLE 'WIZ_MESSAGE' ADD 'LOCAL_CHANGED' int;");
+    }
+    //
+    setTableStructureVersion(WIZ_TABLE_STRUCTURE_VERSION);
+    return true;
 }
 
 CString CWizIndexBase::FormatCanonicSQL(const CString& strTableName,
@@ -193,6 +219,13 @@ CString CWizIndexBase::FormatDeleteSQLFormat(const CString& strTableName,
     return WizFormatString2(_T("delete from %1 where %2=%s"),
                             strTableName,
                             strKey);
+}
+
+CString CWizIndexBase::FormatDeleteSQLByWhere(const CString& strTableName, const CString& strWhere)
+{
+    return WizFormatString2(_T("delete from %1 where %2"),
+                            strTableName,
+                            strWhere);
 }
 
 CString CWizIndexBase::FormatQuerySQLByTime(const CString& strTableName,
@@ -282,6 +315,7 @@ bool CWizIndexBase::SQLToTagDataArray(const CString& strSQL, CWizTagDataArray& a
             data.strDescription = query.getStringField(tagTAG_DESCRIPTION);
             data.tModified = query.getTimeField(tagDT_MODIFIED);
             data.nVersion = query.getInt64Field(tagVersion);
+            data.nPostion = query.getInt64Field(tagTAG_POS);
 
             arrayTag.push_back(data);
             query.nextRow();
@@ -541,6 +575,8 @@ bool CWizIndexBase::SQLToMessageDataArray(const QString& strSQL,
             data.title = query.getStringField(msgMESSAGE_TITLE);
             data.messageBody = query.getStringField(msgMESSAGE_TEXT);
             data.nVersion = query.getInt64Field(msgWIZ_VERSION);
+            data.nDeleteStatus = query.getIntField(msgDELETE_STATUS);
+            data.nLocalChanged = query.getIntField(msgLOCAL_CHANGED);
 
             arrayMessage.push_back(data);
             query.nextRow();
@@ -606,7 +642,9 @@ bool CWizIndexBase::createMessageEx(const WIZMESSAGEDATA& data)
                   TIME2SQL(data.tCreated).utf16(),
                   STR2SQL(data.title).utf16(),
                   STR2SQL(data.messageBody).utf16(),
-                  WizInt64ToStr(data.nVersion).utf16()
+                  WizInt64ToStr(data.nVersion).utf16(),
+                  data.nDeleteStatus,
+                  data.nLocalChanged
         );
 
 
@@ -634,7 +672,9 @@ bool CWizIndexBase::modifyMessageEx(const WIZMESSAGEDATA& data)
     CString strSQL;
     strSQL.Format(strFormat,
                   data.nReadStatus,
+                  data.nDeleteStatus,
                   WizInt64ToStr(data.nVersion).utf16(),
+                  data.nLocalChanged,
                   WizInt64ToStr(data.nId).utf16()
         );
 
@@ -722,6 +762,7 @@ bool CWizIndexBase::modifyUserEx(const WIZBIZUSER& user)
 
     CString strSQL;
     strSQL.Format(strFormat,
+                  STR2SQL(user.userId).utf16(),
                   STR2SQL(user.alias).utf16(),
                   STR2SQL(user.pinyin).utf16()
         );
@@ -769,7 +810,8 @@ bool CWizIndexBase::CreateTagEx(const WIZTAGDATA& d)
         STR2SQL(data.strName).utf16(),
         STR2SQL(data.strDescription).utf16(),
         TIME2SQL(data.tModified).utf16(),
-        WizInt64ToStr(data.nVersion).utf16()
+        WizInt64ToStr(data.nVersion).utf16(),
+        WizInt64ToStr(data.nPostion).utf16()
         );
 
 
@@ -806,6 +848,7 @@ bool CWizIndexBase::ModifyTagEx(const WIZTAGDATA& d)
         STR2SQL(data.strDescription).utf16(),
         TIME2SQL(data.tModified).utf16(),
         WizInt64ToStr(data.nVersion).utf16(),
+        WizInt64ToStr(data.nPostion).utf16(),
         STR2SQL(data.strGUID).utf16()
         );
 
@@ -1246,6 +1289,15 @@ bool CWizIndexBase::GetAllChildTags(const CString& strParentTagGUID, CWizTagData
     return true;
 }
 
+bool CWizIndexBase::GetAllTagsWithErrorParent(CWizTagDataArray& arrayTag)
+{
+    CString strWhere = QString("TAG_GROUP_GUID is not null and TAG_GROUP_GUID "
+                               "not in (select distinct TAG_GUID from %1)").arg(TABLE_NAME_WIZ_TAG);
+
+    CString strSQL = FormatQuerySQL(TABLE_NAME_WIZ_TAG, FIELD_LIST_WIZ_TAG, strWhere);
+    return SQLToTagDataArray(strSQL, arrayTag);
+}
+
 bool CWizIndexBase::GetChildTagsSize(const CString &strParentTagGUID, int &size)
 {
     CString strWhere = strParentTagGUID.isEmpty() ?
@@ -1392,7 +1444,7 @@ bool CWizIndexBase::DocumentFromGUID(const CString& strDocumentGUID, WIZDOCUMENT
     }
 
     if (arrayDocument.empty()) {
-        TOLOG(_T("Failed to get document by guid, result is empty"));
+        //TOLOG(_T("Failed to get document by guid, result is empty"));
         return false;
     }
 
@@ -1498,6 +1550,40 @@ bool CWizIndexBase::messageFromId(qint64 nId, WIZMESSAGEDATA& data)
     return true;
 }
 
+bool CWizIndexBase::messageFromUserGUID(const QString& userGUID, CWizMessageDataArray& arrayMessage)
+{
+    CString strWhere;
+    strWhere.Format("SENDER_GUID=%s", STR2SQL(userGUID).utf16());
+
+    CString strSQL = FormatQuerySQL(TABLE_NAME_WIZ_MESSAGE,
+                                    FIELD_LIST_WIZ_MESSAGE,
+                                    strWhere);
+
+    if (!SQLToMessageDataArray(strSQL, arrayMessage)) {
+        TOLOG1("[messageFromId] failed to get message by user guid : %1", userGUID);
+        return false;
+    }
+
+    return !arrayMessage.empty();
+}
+
+bool CWizIndexBase::unreadMessageFromUserGUID(const QString& userGUID, CWizMessageDataArray& arrayMessage)
+{
+    CString strWhere;
+    strWhere.Format("SENDER_GUID=%s and READ_STATUS=0", STR2SQL(userGUID).utf16());
+
+    CString strSQL = FormatQuerySQL(TABLE_NAME_WIZ_MESSAGE,
+                                    FIELD_LIST_WIZ_MESSAGE,
+                                    strWhere);
+
+    if (!SQLToMessageDataArray(strSQL, arrayMessage)) {
+        TOLOG1("[messageFromId] failed to get unread message by user guid : %1", userGUID);
+        return false;
+    }
+
+    return !arrayMessage.empty();
+}
+
 bool CWizIndexBase::messageFromDocumentGUID(const QString& strGUID, WIZMESSAGEDATA& data)
 {
     CString strWhere;
@@ -1509,7 +1595,7 @@ bool CWizIndexBase::messageFromDocumentGUID(const QString& strGUID, WIZMESSAGEDA
 
     CWizMessageDataArray arrayMessage;
     if (!SQLToMessageDataArray(strSQL, arrayMessage)) {
-        TOLOG("[messageFromId] failed to get message by document guid");
+        TOLOG1("[messageFromId] failed to get message by document guid : %1", strGUID);
         return false;
     }
 

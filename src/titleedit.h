@@ -24,12 +24,15 @@ public:
     void setCompleter(QCompleter* completer);
     QCompleter* completer() const { return c; }
 
+public slots:
+    void onTitleEditingFinished();
+    void setText(const QString &text);
+
 signals:
     void titleEdited(QString strTitle);
 
 protected:
     QSize sizeHint() const;
-    virtual void inputMethodEvent(QInputMethodEvent* event);
     virtual void keyPressEvent(QKeyEvent* e);
     virtual void contextMenuEvent(QContextMenuEvent* e);
 
@@ -44,9 +47,10 @@ private:
     CWizDocumentView* noteView();
 
 private Q_SLOTS:
-    void onInsertCompletion(const QModelIndex &index);
-    void onTitleEditingFinished();
+    void onInsertCompletion(const QModelIndex &index);    
     void onTitleReturnPressed();
+    void onTextEdit(const QString & text);
+    void onTextChanged(const QString & text);
 };
 
 } // namespace Internal
